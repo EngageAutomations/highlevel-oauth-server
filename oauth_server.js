@@ -504,16 +504,7 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Debug endpoint to check feature flags
-app.get('/debug/flags', (req, res) => {
-  res.json({
-    OAUTH_CALLBACK_V2: process.env.OAUTH_CALLBACK_V2,
-    OAUTH_CALLBACK_V2_FLAG: OAUTH_CALLBACK_V2,
-    OAUTH_CALLBACK_LOG: process.env.OAUTH_CALLBACK_LOG,
-    OAUTH_CALLBACK_LOG_FLAG: OAUTH_CALLBACK_LOG,
-    NODE_ENV: process.env.NODE_ENV
-  });
-});
+
 
 // Version endpoint (no auth)
 app.get('/version', (req, res) => {
