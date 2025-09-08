@@ -536,6 +536,7 @@ app.get('/metrics', authenticateS2S, async (req, res) => {
 // Read feature flags for OAuth behavior (safe defaults)
 const OAUTH_CALLBACK_V2 = process.env.OAUTH_CALLBACK_V2 === '1';
 const OAUTH_CALLBACK_LOG = process.env.OAUTH_CALLBACK_LOG === '1';
+// Force redeploy to pick up env vars
 
 // OAuth callback
 app.get('/oauth/callback', strictLimiter, async (req, res) => {
