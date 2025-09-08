@@ -1,0 +1,119 @@
+{
+  "name": "highlevel-oauth-integration",
+  "version": "2.1.0",
+  "description": "HighLevel OAuth 2.0 Integration with dual Railway deployment architecture",
+  "main": "oauth_server.js",
+  "scripts": {
+    "start": "node oauth_server.js",
+    "start:oauth": "node oauth_server.js",
+    "start:api": "node api_server.js",
+    "dev": "nodemon oauth_server.js",
+    "dev:oauth": "nodemon oauth_server.js",
+    "dev:api": "nodemon api_server.js",
+    "test": "jest --coverage",
+    "test:watch": "jest --watch",
+    "test:resilience": "node resilience_test.js",
+    "lint": "eslint *.js",
+    "lint:fix": "eslint *.js --fix",
+    "db:migrate": "psql $DATABASE_URL -f database_migration.sql",
+    "db:seed": "node scripts/seed_database.js",
+    "security:audit": "npm audit --audit-level moderate",
+    "security:fix": "npm audit fix",
+    "build": "echo 'No build step required for Node.js'",
+    "prestart": "npm run security:audit",
+    "postinstall": "echo 'Installation complete. Run npm run db:migrate to set up database.'"
+  },
+  "keywords": [
+    "highlevel",
+    "oauth",
+    "integration",
+    "crm",
+    "api",
+    "railway",
+    "marketplace"
+  ],
+  "author": "Your Organization",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "helmet": "^7.1.0",
+    "express-rate-limit": "^7.1.5",
+    "express-validator": "^7.0.1",
+    "pg": "^8.11.3",
+    "jsonwebtoken": "^9.0.2",
+    "axios": "^1.6.2",
+    "winston": "^3.11.0",
+    "crypto": "^1.0.1",
+    "dotenv": "^16.3.1",
+    "compression": "^1.7.4",
+    "morgan": "^1.10.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2",
+    "jest": "^29.7.0",
+    "supertest": "^6.3.3",
+    "eslint": "^8.55.0",
+    "eslint-config-standard": "^17.1.0",
+    "eslint-plugin-import": "^2.29.0",
+    "eslint-plugin-node": "^11.1.0",
+    "eslint-plugin-promise": "^6.1.1",
+    "@types/node": "^20.10.4"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-org/highlevel-oauth-integration.git"
+  },
+  "bugs": {
+    "url": "https://github.com/your-org/highlevel-oauth-integration/issues"
+  },
+  "homepage": "https://github.com/your-org/highlevel-oauth-integration#readme",
+  "jest": {
+    "testEnvironment": "node",
+    "collectCoverageFrom": [
+      "*.js",
+      "!node_modules/**",
+      "!coverage/**",
+      "!jest.config.js"
+    ],
+    "coverageThreshold": {
+      "global": {
+        "branches": 70,
+        "functions": 70,
+        "lines": 70,
+        "statements": 70
+      }
+    }
+  },
+  "eslintConfig": {
+    "extends": "standard",
+    "env": {
+      "node": true,
+      "jest": true
+    },
+    "rules": {
+      "no-console": "warn",
+      "no-unused-vars": "error",
+      "prefer-const": "error",
+      "no-var": "error"
+    }
+  },
+  "nodemonConfig": {
+    "watch": [
+      "*.js",
+      "*.json"
+    ],
+    "ignore": [
+      "node_modules/**",
+      "coverage/**",
+      "*.test.js"
+    ],
+    "env": {
+      "NODE_ENV": "development"
+    }
+  }
+}
