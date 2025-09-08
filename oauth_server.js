@@ -537,10 +537,14 @@ const OAUTH_CALLBACK_LOG = process.env.OAUTH_CALLBACK_LOG === '1';
 // Temporary debug: log callback request details
 app.get('/oauth/callback', (req, res, next) => {
   if (OAUTH_CALLBACK_LOG) {
+    const safeQuery = { ...req.query };
+    if (typeof safeQuery.code === 'string' && safeQuery.code.length) {
+      safeQuery.code = '[redacted]';
+    }
     logger.info('CALLBACK DEBUG', {
       originalUrl: req.originalUrl,
       method: req.method,
-      query: req.query,
+      query: safeQuery,
       headers: {
         host: req.headers.host,
         'user-agent': req.headers['user-agent'],
@@ -781,7 +785,7 @@ app.post('/oauth/disconnect', strictLimiter, async (req, res) => {
     logger.error('Failed to revoke installation:', {
       error: error.message,
       locationId: location_id,
-      agencyId: agency_id
+      Agencyid: agency_id
     });
     
     res.status(500).json({ error: 'Failed to revoke installation' });
