@@ -261,15 +261,22 @@ async function auditLog(installationId, eventType, eventData, req) {
 
 // HighLevel API client
 class HighLevelAPI {
-  static async exchangeCodeForTokens(code, locationId) {
+  static async exchangeCodeForTokens(code, locationId, agencyId) {
     try {
-      const response = await axios.post(`${config.hlAuthBase}/oauth/token`, {
+      // Determine user_type based on which ID is provided
+      const userType = locationId ? 'location' : 'company';
+      
+      const tokenData = {
         client_id: config.hlClientId,
         client_secret: config.hlClientSecret,
         grant_type: 'authorization_code',
         code: code,
-        redirect_uri: config.redirectUri
-      }, {
+        redirect_uri: config.redirectUri,
+        user_type: userType
+      };
+      
+      const response = await axios.post(`${config.hlApiBase}/oauth/token`, 
+        new URLSearchParams(tokenData).toString(), {
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded'
         },
@@ -281,7 +288,9 @@ class HighLevelAPI {
       logger.error('Token exchange failed:', {
         error: error.message,
         status: error.response?.status,
-        data: error.response?.data
+        data: error.response?.data,
+        locationId,
+        agencyId
       });
       throw new Error('Failed to exchange authorization code for tokens');
     }
@@ -289,23 +298,26 @@ class HighLevelAPI {
   
   static async refreshToken(refreshToken) {
     try {
-      const response = await axios.post(`${config.hlAuthBase}/oauth/token`, {
+      const body = new URLSearchParams({
         client_id: config.hlClientId,
         client_secret: config.hlClientSecret,
         grant_type: 'refresh_token',
         refresh_token: refreshToken
-      }, {
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded'
-        },
-        timeout: 10000
-      });
-      
+      }).toString();
+      const response = await axios.post(
+        `${config.hlApiBase}/oauth/token`,
+        body,
+        {
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          timeout: 15000
+        }
+      );
       return response.data;
     } catch (error) {
       logger.error('Token refresh failed:', {
         error: error.message,
-        status: error.response?.status
+        status: error.response?.status,
+        data: error.response?.data
       });
       throw new Error('Failed to refresh access token');
     }
@@ -492,6 +504,15 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Version endpoint (no auth)
+app.get('/version', (req, res) => {
+  res.json({
+    commit: process.env.RAILWAY_GIT_COMMIT_SHA || process.env.COMMIT_SHA || 'unknown',
+    timestamp: new Date().toISOString(),
+    environment: config.nodeEnv
+  });
+});
+
 // Metrics endpoint (S2S authenticated)
 app.get('/metrics', authenticateS2S, async (req, res) => {
   try {
@@ -510,64 +531,113 @@ app.get('/metrics', authenticateS2S, async (req, res) => {
   }
 });
 
+// Read feature flags for OAuth behavior (safe defaults)
+const OAUTH_CALLBACK_V2 = process.env.OAUTH_CALLBACK_V2 === '1';
+const OAUTH_CALLBACK_LOG = process.env.OAUTH_CALLBACK_LOG === '1';
+
 // OAuth callback
 app.get('/oauth/callback', strictLimiter, async (req, res) => {
-  const { code, location_id, agency_id, company_id, state } = req.query;
-  
-  if (!code) {
-    logger.warn('OAuth callback missing code parameter', { query: req.query, ip: req.ip });
-    return res.status(400).json({ error: 'Missing authorization code' });
+  // Debug logging if enabled
+  if (OAUTH_CALLBACK_LOG) {
+    const safeQuery = { ...req.query };
+    if (typeof safeQuery.code === 'string' && safeQuery.code.length) {
+      safeQuery.code = '[redacted]';
+    }
+    logger.info('CALLBACK DEBUG', {
+      originalUrl: req.originalUrl,
+      method: req.method,
+      query: safeQuery,
+      headers: {
+        host: req.headers.host,
+        'user-agent': req.headers['user-agent'],
+        'cf-connecting-ip': req.headers['cf-connecting-ip'],
+        'x-forwarded-for': req.headers['x-forwarded-for']
+      }
+    });
   }
-  
-  // Support both agency_id and company_id parameters
-  const effectiveAgencyId = agency_id || company_id;
-  
-  if (!location_id && !effectiveAgencyId) {
-    logger.warn('OAuth callback missing tenant ID', { query: req.query, ip: req.ip });
-    return res.status(400).json({ error: 'Missing location_id or agency_id' });
+  // Feature-flagged behavior: V1 (legacy) vs V2 (robust)
+  if (!OAUTH_CALLBACK_V2) {
+    try {
+      const { code, location_id } = req.query;
+      if (!code || !location_id) {
+        return res.status(400).json({ error: 'Missing required parameters: code and location_id' });
+      }
+      // Exchange and store for location installs only (legacy behavior)
+      const tokens = await HighLevelAPI.exchangeCodeForTokens(code, location_id, null);
+      const scopes = tokens.scope ? tokens.scope.split(' ') : [];
+      await InstallationDB.saveInstallation(location_id, null, tokens, scopes, req);
+      return res.send('✅ Connected (V1). You can close this window.');
+    } catch (error) {
+      logger.error('OAuth callback (V1) failed:', {
+        error: error.message,
+        data: error.response?.data,
+        query: req.query,
+        ip: req.ip
+      });
+      return res.status(500).json({ error: 'OAuth callback failed', detail: error.response?.data || error.message });
+    }
   }
-  
+
+  // ===== V2 (new, robust logic) =====
   try {
-    // Exchange code for tokens
-    const tokens = await HighLevelAPI.exchangeCodeForTokens(code, location_id);
-    
-    // Parse scopes
+    const { code, location_id, agency_id, company_id } = req.query;
+    if (!code) {
+      logger.warn('OAuth callback missing code parameter', { query: req.query, ip: req.ip });
+      return res.status(400).json({ error: 'Missing required parameter: code', got: req.query });
+    }
+
+    // Decide user_type + tenant key
+    let locationId = location_id || null;
+    let companyId = company_id || agency_id || null; // HighLevel expects 'company' for agency installs
+
+    // Exchange the code for tokens
+    const tokens = await HighLevelAPI.exchangeCodeForTokens(code, locationId, companyId);
     const scopes = tokens.scope ? tokens.scope.split(' ') : [];
-    
+
+    // Optional: best-effort tenant introspection if none present
+    if (!locationId && !companyId && tokens.access_token) {
+      try {
+        const me = await axios.get(`${config.hlApiBase}/users/me`, {
+          headers: { Authorization: `Bearer ${tokens.access_token}` },
+          timeout: 15000
+        });
+        companyId = me.data?.companyId || me.data?.agencyId || companyId || null;
+        locationId = me.data?.locationId || locationId || null;
+      } catch (e) {
+        logger.warn('Tenant introspection failed:', e.response?.data || e.message);
+      }
+    }
+
+    // If still no tenant, accept but ask for explicit re-install
+    if (!locationId && !companyId) {
+      return res.status(202).send('Connected, but tenant not provided. Please re-install choosing Agency or Location explicitly.');
+    }
+
     // Save installation
     const installationId = await InstallationDB.saveInstallation(
-      location_id,
-      effectiveAgencyId,
+      locationId,
+      companyId,
       tokens,
       scopes,
       req
     );
-    
-    logger.info('OAuth installation successful', {
+
+    logger.info('OAuth installation successful (V2)', {
       installationId,
-      locationId: location_id,
-      agencyId: effectiveAgencyId,
+      locationId,
+      agencyId: companyId,
       scopes
     });
-    
-    res.json({
-      success: true,
-      installation_id: installationId,
-      message: 'Installation completed successfully'
-    });
-    
+
+    return res.send('✅ Connected to HighLevel (V2). You can close this window.');
   } catch (error) {
-    logger.error('OAuth callback failed:', {
+    logger.error('OAuth callback (V2) failed:', {
       error: error.message,
-      locationId: location_id,
-      agencyId: effectiveAgencyId,
+      data: error.response?.data,
+      query: req.query,
       ip: req.ip
     });
-    
-    res.status(500).json({
-      error: 'Installation failed',
-      message: error.message
-    });
+    return res.status(500).json({ error: 'OAuth callback failed', detail: error.response?.data || error.message });
   }
 });
 
@@ -759,6 +829,7 @@ const server = app.listen(config.port, () => {
   logger.info(`🚀 OAuth Server running on port ${config.port}`);
   logger.info(`Environment: ${config.nodeEnv}`);
   logger.info(`Redirect URI: ${config.redirectUri}`);
+  logger.info(`Commit SHA: ${process.env.RAILWAY_GIT_COMMIT_SHA || process.env.COMMIT_SHA || 'unknown'}`);
 });
 
 // Background token refresh job (runs every hour)
