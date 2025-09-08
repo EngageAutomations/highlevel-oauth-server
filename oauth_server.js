@@ -261,15 +261,22 @@ async function auditLog(installationId, eventType, eventData, req) {
 
 // HighLevel API client
 class HighLevelAPI {
-  static async exchangeCodeForTokens(code, locationId) {
+  static async exchangeCodeForTokens(code, locationId, agencyId) {
     try {
-      const response = await axios.post(`${config.hlAuthBase}/oauth/token`, {
+      // Determine user_type based on which ID is provided
+      const userType = locationId ? 'location' : 'company';
+      
+      const tokenData = {
         client_id: config.hlClientId,
         client_secret: config.hlClientSecret,
         grant_type: 'authorization_code',
         code: code,
-        redirect_uri: config.redirectUri
-      }, {
+        redirect_uri: config.redirectUri,
+        user_type: userType
+      };
+      
+      const response = await axios.post(`${config.hlApiBase}/oauth/token`, 
+        new URLSearchParams(tokenData).toString(), {
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded'
         },
@@ -281,7 +288,9 @@ class HighLevelAPI {
       logger.error('Token exchange failed:', {
         error: error.message,
         status: error.response?.status,
-        data: error.response?.data
+        data: error.response?.data,
+        locationId,
+        agencyId
       });
       throw new Error('Failed to exchange authorization code for tokens');
     }
@@ -528,8 +537,8 @@ app.get('/oauth/callback', strictLimiter, async (req, res) => {
   }
   
   try {
-    // Exchange code for tokens
-    const tokens = await HighLevelAPI.exchangeCodeForTokens(code, location_id);
+    // Exchange code for tokens - pass both locationId and agencyId
+    const tokens = await HighLevelAPI.exchangeCodeForTokens(code, location_id, effectiveAgencyId);
     
     // Parse scopes
     const scopes = tokens.scope ? tokens.scope.split(' ') : [];
