@@ -555,6 +555,7 @@ app.get('/oauth/callback', strictLimiter, async (req, res) => {
       }
     });
   }
+
   // Feature-flagged behavior: V1 (legacy) vs V2 (robust)
   if (!OAUTH_CALLBACK_V2) {
     try {
@@ -782,7 +783,7 @@ app.post('/oauth/disconnect', strictLimiter, async (req, res) => {
     logger.error('Failed to revoke installation:', {
       error: error.message,
       locationId: location_id,
-      agencyId: agency_id
+      Agencyid: agency_id
     });
     
     res.status(500).json({ error: 'Failed to revoke installation' });
