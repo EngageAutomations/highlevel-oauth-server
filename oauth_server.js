@@ -104,6 +104,27 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+// Service fingerprinting
+app.use((req, res, next) => {
+  res.setHeader('X-App', 'oauth-server');
+  res.setHeader('X-Commit', process.env.RAILWAY_GIT_COMMIT_SHA || 'unknown');
+  next();
+});
+
+// Service identification endpoint
+app.get('/whoami', (req, res) => {
+  res.json({ app: 'oauth-server', commit: process.env.RAILWAY_GIT_COMMIT_SHA || 'unknown' });
+});
+
+// Feature flags endpoint for runtime configuration visibility
+app.get('/feature-flags', (req, res) => {
+  res.json({
+    OAUTH_CALLBACK_V2: process.env.OAUTH_CALLBACK_V2,
+    OAUTH_CALLBACK_LOG: process.env.OAUTH_CALLBACK_LOG,
+    commit: process.env.RAILWAY_GIT_COMMIT_SHA || 'unknown'
+  });
+});
+
 // Rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
