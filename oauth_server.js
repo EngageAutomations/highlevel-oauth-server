@@ -501,6 +501,15 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Version endpoint (no auth)
+app.get('/version', (req, res) => {
+  res.json({
+    commit: process.env.RAILWAY_GIT_COMMIT_SHA || process.env.COMMIT_SHA || 'unknown',
+    timestamp: new Date().toISOString(),
+    environment: config.nodeEnv
+  });
+});
+
 // Metrics endpoint (S2S authenticated)
 app.get('/metrics', authenticateS2S, async (req, res) => {
   try {
@@ -517,6 +526,22 @@ app.get('/metrics', authenticateS2S, async (req, res) => {
     logger.error('Metrics query failed:', error);
     res.status(500).json({ error: 'Failed to retrieve metrics' });
   }
+});
+
+// Temporary debug: log callback request details
+app.get('/oauth/callback', (req, res, next) => {
+  logger.info('CALLBACK DEBUG', {
+    originalUrl: req.originalUrl,
+    method: req.method,
+    query: req.query,
+    headers: {
+      host: req.headers.host,
+      'user-agent': req.headers['user-agent'],
+      'cf-connecting-ip': req.headers['cf-connecting-ip'],
+      'x-forwarded-for': req.headers['x-forwarded-for']
+    }
+  });
+  return next();
 });
 
 // OAuth callback
@@ -768,6 +793,7 @@ const server = app.listen(config.port, () => {
   logger.info(`🚀 OAuth Server running on port ${config.port}`);
   logger.info(`Environment: ${config.nodeEnv}`);
   logger.info(`Redirect URI: ${config.redirectUri}`);
+  logger.info(`Commit SHA: ${process.env.RAILWAY_GIT_COMMIT_SHA || process.env.COMMIT_SHA || 'unknown'}`);
 });
 
 // Background token refresh job (runs every hour)
