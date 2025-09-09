@@ -128,23 +128,23 @@ app.get('/feature-flags', (req, res) => {
   });
 });
 
-// Rate limiting
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: config.nodeEnv === 'production' ? 100 : 1000, // requests per window
-  message: { error: 'Too many requests, please try again later' },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
+// Rate limiting (temporarily disabled for debugging)
+// const limiter = rateLimit({
+//   windowMs: 15 * 60 * 1000, // 15 minutes
+//   max: config.nodeEnv === 'production' ? 100 : 1000, // requests per window
+//   message: { error: 'Too many requests, please try again later' },
+//   standardHeaders: true,
+//   legacyHeaders: false,
+// });
 
-app.use(limiter);
+// app.use(limiter);
 
-// Stricter rate limiting for sensitive endpoints
-const strictLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 20,
-  message: { error: 'Rate limit exceeded for sensitive endpoint' }
-});
+// Stricter rate limiting for sensitive endpoints (temporarily disabled for debugging)
+// const strictLimiter = rateLimit({
+//   windowMs: 15 * 60 * 1000,
+//   max: 20,
+//   message: { error: 'Rate limit exceeded for sensitive endpoint' }
+// });
 
 // Logger setup
 const logger = winston.createLogger({
@@ -562,7 +562,7 @@ const OAUTH_CALLBACK_V2 = process.env.OAUTH_CALLBACK_V2 === '1';
 const OAUTH_CALLBACK_LOG = process.env.OAUTH_CALLBACK_LOG === '1';
 
 // OAuth callback
-app.get('/oauth/callback', strictLimiter, async (req, res) => {
+app.get('/oauth/callback', /* strictLimiter, */ async (req, res) => {
   // Debug logging if enabled
   if (OAUTH_CALLBACK_LOG) {
     const safeQuery = { ...req.query };
@@ -787,7 +787,7 @@ app.get('/admin/installations', authenticateS2S, async (req, res) => {
 });
 
 // Disconnect/revoke installation
-app.post('/oauth/disconnect', strictLimiter, async (req, res) => {
+app.post('/oauth/disconnect', /* strictLimiter, */ async (req, res) => {
   const { location_id, agency_id } = req.body;
   
   if (!location_id && !agency_id) {
