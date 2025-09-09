@@ -93,6 +93,23 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+// Service fingerprinting
+app.use((req, res, next) => {
+  res.setHeader('X-App', 'api-server');
+  res.setHeader('X-Commit', process.env.RAILWAY_GIT_COMMIT_SHA || 'unknown');
+  next();
+});
+
+// Service identification endpoint
+app.get('/whoami', (req, res) => {
+  res.json({ app: 'api-server', commit: process.env.RAILWAY_GIT_COMMIT_SHA || 'unknown' });
+});
+
+// Hard-stop guard: prevent API server from handling OAuth callbacks
+app.all('/oauth/callback', (req, res) => {
+  res.status(410).json({ error: 'Wrong service. /oauth/callback must hit oauth-server.' });
+});
+
 // Rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
