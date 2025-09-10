@@ -1099,7 +1099,9 @@ process.on('SIGTERM', () => {
 // Initialize database and start server
 (async () => {
   try {
+    logger.info('Starting database initialization...');
     await initializeDatabase();
+    logger.info('Database initialization completed successfully');
     
     const server = app.listen(config.port, () => {
       logger.info(`🚀 OAuth Server running on port ${config.port}`);
@@ -1108,7 +1110,11 @@ process.on('SIGTERM', () => {
       logger.info(`Commit SHA: ${process.env.RAILWAY_GIT_COMMIT_SHA || process.env.COMMIT_SHA || 'unknown'}`);
     });
   } catch (error) {
-    logger.error('Failed to initialize server:', error);
+    logger.error('Failed to initialize server:', {
+      error: error.message,
+      stack: error.stack,
+      code: error.code
+    });
     process.exit(1);
   }
 })();
