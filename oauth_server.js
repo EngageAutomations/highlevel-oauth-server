@@ -1091,7 +1091,10 @@ if (ff('OAUTH_CALLBACK_V2')) {
        if (!hadTenant || (!finalLocationId && !finalAgencyId)) {
          try {
            const me = await axios.get(`${config.hlApiBase}/users/me`, {
-             headers: { Authorization: `Bearer ${tokens.access_token}` },
+             headers: { 
+               Authorization: `Bearer ${tokens.access_token}`,
+               Version: '2021-07-28'
+             },
              timeout: 15000
            });
            
@@ -1119,7 +1122,10 @@ if (ff('OAUTH_CALLBACK_V2')) {
          try {
            // Fetch location details to get parent agency_id
            const locationResponse = await axios.get(`${config.hlApiBase}/locations/${finalLocationId}`, {
-             headers: { 'Authorization': `Bearer ${tokens.access_token}` },
+             headers: { 
+               'Authorization': `Bearer ${tokens.access_token}`,
+               'Version': '2021-07-28'
+             },
              timeout: 10000
            });
            
