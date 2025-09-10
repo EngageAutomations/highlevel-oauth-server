@@ -601,9 +601,6 @@ app.get('/metrics', authenticateS2S, async (req, res) => {
   }
 });
 
-// Helper reads flags at request-time (no restart needed)
-const ff = (k) => process.env[k] === '1';
-
 // Tripwire logger (earliest)
 app.use((req, res, next) => {
   if (req.path === '/oauth/callback') {
