@@ -264,8 +264,7 @@ async function initializeDatabase() {
   }
 }
 
-// Initialize database on startup
-initializeDatabase();
+// Database initialization will be called before server starts
 
 // Encryption utilities
 class TokenEncryption {
@@ -1092,13 +1091,22 @@ process.on('SIGTERM', () => {
   });
 });
 
-// Start server
-const server = app.listen(config.port, () => {
-  logger.info(`🚀 OAuth Server running on port ${config.port}`);
-  logger.info(`Environment: ${config.nodeEnv}`);
-  logger.info(`Redirect URI: ${config.redirectUri}`);
-  logger.info(`Commit SHA: ${process.env.RAILWAY_GIT_COMMIT_SHA || process.env.COMMIT_SHA || 'unknown'}`);
-});
+// Initialize database and start server
+(async () => {
+  try {
+    await initializeDatabase();
+    
+    const server = app.listen(config.port, () => {
+      logger.info(`🚀 OAuth Server running on port ${config.port}`);
+      logger.info(`Environment: ${config.nodeEnv}`);
+      logger.info(`Redirect URI: ${config.redirectUri}`);
+      logger.info(`Commit SHA: ${process.env.RAILWAY_GIT_COMMIT_SHA || process.env.COMMIT_SHA || 'unknown'}`);
+    });
+  } catch (error) {
+    logger.error('Failed to initialize server:', error);
+    process.exit(1);
+  }
+})();
 
 // Background token refresh job (runs every hour)
 setInterval(async () => {
