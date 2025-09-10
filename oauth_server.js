@@ -212,13 +212,53 @@ const db = new Pool({
   connectionTimeoutMillis: 2000,
 });
 
-// Test database connection
-db.query('SELECT NOW()', (err, result) => {
+// Test database connection and create tables
+db.query('SELECT NOW()', async (err, result) => {
   if (err) {
     logger.error('Database connection failed:', err);
     process.exit(1);
   }
   logger.info('Database connected successfully');
+  
+  // Create OAuth tables if they don't exist
+  try {
+    logger.info('Creating OAuth tables if needed...');
+    
+    // Create oauth_state table
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS oauth_state (
+        state        TEXT PRIMARY KEY,
+        client_id    TEXT NOT NULL,
+        redirect_uri TEXT NOT NULL,
+        created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        expires_at   TIMESTAMPTZ NOT NULL
+      );
+    `);
+    
+    // Create index for oauth_state
+    await db.query(`
+      CREATE INDEX IF NOT EXISTS idx_oauth_state_expires ON oauth_state(expires_at);
+    `);
+    
+    // Create oauth_used_codes table
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS oauth_used_codes (
+        code        TEXT PRIMARY KEY,
+        created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        expires_at  TIMESTAMPTZ NOT NULL
+      );
+    `);
+    
+    // Create index for oauth_used_codes
+    await db.query(`
+      CREATE INDEX IF NOT EXISTS idx_oauth_used_codes_expires ON oauth_used_codes(expires_at);
+    `);
+    
+    logger.info('✅ OAuth tables ready');
+  } catch (tableError) {
+    logger.error('Failed to create OAuth tables:', tableError);
+    // Don\'t exit - tables might already exist
+  }
 });
 
 // Encryption utilities
