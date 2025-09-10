@@ -665,8 +665,6 @@ app.post('/admin/create-tables', async (req, res) => {
   }
 });
 
-
-
 // Version endpoint (no auth)
 app.get('/version', (req, res) => {
   res.json({
