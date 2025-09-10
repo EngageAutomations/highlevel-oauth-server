@@ -2,7 +2,7 @@
 
 /**
  * ============================================================
- * HighLevel OAuth Integration - API Server
+ *  OAuth Integration - API Server
  * ============================================================
  * 
  * This server handles:
