@@ -622,6 +622,49 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Manual table creation endpoint (for debugging)
+app.post('/admin/create-tables', async (req, res) => {
+  try {
+    logger.info('Manual table creation requested');
+    
+    // Create oauth_state table
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS oauth_state (
+        state        TEXT PRIMARY KEY,
+        client_id    TEXT NOT NULL,
+        redirect_uri TEXT NOT NULL,
+        created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        expires_at   TIMESTAMPTZ NOT NULL
+      );
+    `);
+    
+    // Create index for oauth_state
+    await db.query(`
+      CREATE INDEX IF NOT EXISTS idx_oauth_state_expires ON oauth_state(expires_at);
+    `);
+    
+    // Create oauth_used_codes table
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS oauth_used_codes (
+        code        TEXT PRIMARY KEY,
+        created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        expires_at  TIMESTAMPTZ NOT NULL
+      );
+    `);
+    
+    // Create index for oauth_used_codes
+    await db.query(`
+      CREATE INDEX IF NOT EXISTS idx_oauth_used_codes_expires ON oauth_used_codes(expires_at);
+    `);
+    
+    logger.info('✅ Manual table creation successful');
+    res.json({ success: true, message: 'Tables created successfully' });
+  } catch (error) {
+    logger.error('Manual table creation failed:', error);
+    res.status(500).json({ error: 'Failed to create tables', details: error.message });
+  }
+});
+
 
 
 // Version endpoint (no auth)
