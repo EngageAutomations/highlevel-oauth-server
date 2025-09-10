@@ -1,7 +1,7 @@
 ﻿{
     "status":  "configuration_ready",
-    "encryption_key":  "MGNkZjZmYWUtOWRhNS00MmIyLWFhMWYtZjIyOGIzODkyODBkYzk1OWMzZjgtNTk1Ny00OGRmLTgyNDItY2IyODFkYjdhYmJl",
-    "timestamp":  "2025-09-08 01:11:54",
+    "encryption_key":  "NTk4YTc3MDUtMjVhNy00OWM4LWFmODMtMzdiN2IyNTJkZjY5NWY3NDFiZDItMDIxNy00YjI4LThjMjAtMTQxYTU2ZTQwNGMz",
+    "timestamp":  "2025-09-10 11:31:52",
     "next_steps":  [
                        "Create GitHub repositories",
                        "Create Railway projects",
@@ -10,6 +10,6 @@
                        "Configure HighLevel redirect URI",
                        "Test OAuth flow"
                    ],
-    "s2s_secret":  "Nzk4YjBmNTItZTlmMS00OGQ4LWI3YWMtMWQ0MzQxMTY3NTEx",
-    "client_id":  "68474924a586bce22a6e64f7-mfa3rwol"
+    "s2s_secret":  "YzAzNzg4YjctYWViMy00Yjc2LTlmYmYtMjM5ZTc4MGJlNjAx",
+    "client_id":  "68474924a586bce22a6e64f7-mf8icnvr"
 }

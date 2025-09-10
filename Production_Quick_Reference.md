@@ -7,10 +7,10 @@
 
 ### Health & Status
 ```
-OAuth Health:    https://<oauth-app>.up.railway.app/health
-API Health:      https://<api-app>.up.railway.app/health
-Metrics:         https://<oauth-app>.up.railway.app/metrics
-Admin Panel:     https://<oauth-app>.up.railway.app/admin/installations
+OAuth Health:    https://api.engageautomations.com/health
+API Health:      https://api-server-production-8a99.up.railway.app/health
+Metrics:         https://api.engageautomations.com/metrics
+Admin Panel:     https://api.engageautomations.com/admin/installations
 ```
 
 ### Management Dashboards
@@ -77,9 +77,9 @@ railway restart
 ### Quick Health Check
 ```powershell
 # Test all endpoints
-curl https://<oauth-app>.up.railway.app/health
-curl https://<api-app>.up.railway.app/health
-curl https://<oauth-app>.up.railway.app/metrics
+curl https://api-server-production-8a99.up.railway.app/health
+curl https://api.engageautomations.com/health
+curl https://api.engageautomations.com/metrics
 ```
 
 ### Rollback to Previous Version
@@ -102,7 +102,7 @@ railway variables --service oauth-server | grep S2S_SHARED_SECRET
 railway variables --service api-server | grep S2S_SHARED_SECRET
 
 # Test JWT generation
-curl -X POST https://<api-app>.up.railway.app/test/jwt
+curl -X POST https://api-server-production-8a99.up.railway.app/test/jwt
 ```
 
 ### Database Connection Issues
@@ -121,7 +121,7 @@ SELECT NOW();
 ```powershell
 # Test rate limits (should get 429 after limit)
 for ($i=1; $i -le 20; $i++) {
-    curl -w "%{http_code}\n" -s https://<oauth-app>.up.railway.app/proxy/hl
+    curl -w "%{http_code}\n" -s https://api.engageautomations.com/proxy/hl
 }
 ```
 

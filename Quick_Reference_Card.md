@@ -80,7 +80,7 @@ CREATE TABLE installations (
 ```env
 HL_CLIENT_ID=68474924a586bce22a6e64f7-mfa3rwol
 HL_CLIENT_SECRET=54e5b66e-88a6-4f71-a8d1-b1c6e0270c88
-REDIRECT_URI=https://<oauth-app>.up.railway.app/oauth/callback
+REDIRECT_URI=https://api.engageautomations.com/oauth/callback
 DATABASE_URL=<railway-postgres-url>
 ENCRYPTION_KEY=<base64-key>
 S2S_SHARED_SECRET=<base64-secret>
@@ -88,7 +88,7 @@ S2S_SHARED_SECRET=<base64-secret>
 
 ### API Server
 ```env
-OAUTH_BASE_URL=https://<oauth-app>.up.railway.app
+OAUTH_BASE_URL=https://api.engageautomations.com
 S2S_SHARED_SECRET=<same-as-oauth-server>
 DEFAULT_SCOPE=location
 PORT=3000
@@ -101,8 +101,8 @@ PORT=3000
 ### Environment Setup
 ```bash
 # Set your Railway URLs (replace with actual URLs)
-export OAUTH_SERVER="https://your-oauth-server.up.railway.app"
-export API_SERVER="https://your-api-server.up.railway.app"
+export OAUTH_SERVER="https://api.engageautomations.com"
+export API_SERVER="https://api-server-production-8a99.up.railway.app"
 export S2S_TOKEN="your-service-to-service-jwt-token"
 export HL_LOCATION_ID="your-highlevel-location-id"
 ```
@@ -237,7 +237,7 @@ done
 ### 9. Security Testing
 ```bash
 # Test HTTPS redirect (should redirect HTTP to HTTPS)
-curl -v "http://your-oauth-server.up.railway.app/health"
+curl -v "https://api.engageautomations.com/health"
 
 # Test CORS headers
 curl -v -H "Origin: https://unauthorized-domain.com" \

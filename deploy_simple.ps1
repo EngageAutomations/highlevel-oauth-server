@@ -2,7 +2,7 @@
 # Using existing credentials from environment variables.txt
 
 param(
-    [string]$HLClientId = "68474924a586bce22a6e64f7-mfa3rwol",
+    [string]$HLClientId = "68474924a586bce22a6e64f7-mf8icnvr",
     [string]$HLClientSecret = "54e5b66e-88a6-4f71-a8d1-b1c6e0270c88",
     [string]$RailwayToken = "42d84861-5a8e-4802-861e-d0afe86a66db"
 )
@@ -72,10 +72,10 @@ try {
     Write-Host "    HL_CLIENT_SECRET=$HLClientSecret" -ForegroundColor Gray
     Write-Host "    ENCRYPTION_KEY=$EncryptionKey" -ForegroundColor Gray
     Write-Host "    S2S_SHARED_SECRET=$S2SSecret" -ForegroundColor Gray
-    Write-Host "    REDIRECT_URI=https://your-oauth-app.up.railway.app/oauth/callback" -ForegroundColor Gray
+    Write-Host "    REDIRECT_URI=https://api.engageautomations.com/oauth/callback" -ForegroundColor Gray
     
     Write-Host "  API Server:" -ForegroundColor White
-    Write-Host "    OAUTH_BASE_URL=https://your-oauth-app.up.railway.app" -ForegroundColor Gray
+    Write-Host "    OAUTH_BASE_URL=https://api.engageautomations.com" -ForegroundColor Gray
     Write-Host "    S2S_SHARED_SECRET=$S2SSecret" -ForegroundColor Gray
     Write-Host "    DEFAULT_SCOPE=location" -ForegroundColor Gray
     

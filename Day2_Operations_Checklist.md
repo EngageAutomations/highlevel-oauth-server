@@ -24,15 +24,15 @@
 ### Environment Verification
 - [ ] **OAuth Server Status**
   ```bash
-  curl -f https://your-oauth-app.up.railway.app/health
+  curl -f https://api.engageautomations.com/health
   ```
   - Status: [✅ Healthy / ⚠️ Warning / ❌ Down]
   - Response Time: [XXXms]
 
 - [ ] **API Server Status**
-  ```bash
-  curl -f https://your-api-app.up.railway.app/health
-  ```
+   ```bash
+   curl -f https://api-server-production-8a99.up.railway.app/health
+   ```
   - Status: [✅ Healthy / ⚠️ Warning / ❌ Down]
   - Response Time: [XXXms]
 
@@ -50,16 +50,16 @@
 ### SSL/TLS Certificate Check
 - [ ] **OAuth Server Certificate**
   ```bash
-  openssl s_client -connect your-oauth-app.up.railway.app:443 -servername your-oauth-app.up.railway.app < /dev/null 2>/dev/null | openssl x509 -noout -dates
+  openssl s_client -connect api.engageautomations.com:443 -servername api.engageautomations.com < /dev/null 2>/dev/null | openssl x509 -noout -dates
   ```
   - Expires: [YYYY-MM-DD]
   - Days Remaining: [XXX]
   - Action Required: [None / Renew Soon / Critical]
 
 - [ ] **API Server Certificate**
-  ```bash
-  openssl s_client -connect your-api-app.up.railway.app:443 -servername your-api-app.up.railway.app < /dev/null 2>/dev/null | openssl x509 -noout -dates
-  ```
+   ```bash
+   openssl s_client -connect api-server-production-8a99.up.railway.app:443 -servername api-server-production-8a99.up.railway.app < /dev/null 2>/dev/null | openssl x509 -noout -dates
+   ```
   - Expires: [YYYY-MM-DD]
   - Days Remaining: [XXX]
   - Action Required: [None / Renew Soon / Critical]
@@ -98,7 +98,7 @@
 ### System Metrics Review
 - [ ] **OAuth Server Metrics**
   ```bash
-  curl -H "Authorization: Bearer $(generate_s2s_token)" https://your-oauth-app.up.railway.app/metrics
+  curl -H "Authorization: Bearer $(generate_s2s_token)" https://api.engageautomations.com/metrics
   ```
   - CPU Usage (7-day avg): [XX%]
   - Memory Usage (7-day avg): [XX%]
@@ -107,9 +107,9 @@
   - Status: [✅ Normal / ⚠️ Elevated / ❌ Critical]
 
 - [ ] **API Server Metrics**
-  ```bash
-  curl https://your-api-app.up.railway.app/admin/metrics
-  ```
+   ```bash
+   curl https://api-server-production-8a99.up.railway.app/admin/metrics
+   ```
   - CPU Usage (7-day avg): [XX%]
   - Memory Usage (7-day avg): [XX%]
   - Response Time (7-day avg): [XXXms]
@@ -548,8 +548,8 @@
 ### Quick Reference Commands
 ```bash
 # Emergency health check
-curl -f https://your-oauth-app.up.railway.app/health && echo "OAuth OK" || echo "OAuth DOWN"
-curl -f https://your-api-app.up.railway.app/health && echo "API OK" || echo "API DOWN"
+curl -f https://api.engageautomations.com/health && echo "OAuth OK" || echo "OAuth DOWN"
+curl -f https://api-server-production-8a99.up.railway.app/health && echo "API OK" || echo "API DOWN"
 
 # Database emergency check
 psql $DATABASE_URL -c "SELECT COUNT(*) FROM hl_installations WHERE status = 'active';"

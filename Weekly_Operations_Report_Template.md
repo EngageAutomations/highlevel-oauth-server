@@ -34,7 +34,7 @@
 #### OAuth Server (Railway Project 1)
 ```bash
 # Run these commands to gather metrics
-curl -H "Authorization: Bearer $(generate_s2s_token)" https://your-oauth-app.up.railway.app/metrics
+curl -H "Authorization: Bearer $(generate_s2s_token)" https://api.engageautomations.com/metrics
 ```
 
 | Metric | Current Week | Previous Week | Trend |
@@ -48,7 +48,7 @@ curl -H "Authorization: Bearer $(generate_s2s_token)" https://your-oauth-app.up.
 #### API Server (Railway Project 2)
 ```bash
 # Run these commands to gather metrics
-curl https://your-api-app.up.railway.app/admin/metrics
+curl https://api-server-production-8a99.up.railway.app/admin/metrics
 ```
 
 | Metric | Current Week | Previous Week | Trend |
@@ -131,7 +131,7 @@ ORDER BY event_count DESC;
 node -e "
 const axios = require('axios');
 const token = generateS2SToken();
-axios.get('https://your-oauth-app.up.railway.app/admin/installations', {
+axios.get('https://api.engageautomations.com/admin/installations', {
   headers: { Authorization: 'Bearer ' + token }
 }).then(res => console.log('Active installations:', res.data.length));
 "
@@ -149,7 +149,7 @@ axios.get('https://your-oauth-app.up.railway.app/admin/installations', {
 
 ```bash
 # Test HighLevel API connectivity
-curl -X POST https://your-api-app.up.railway.app/api/locations/test_location_id/contacts \
+curl -X POST https://api-server-production-8a99.up.railway.app/api/locations/test_location_id/contacts \
   -H "Content-Type: application/json" \
   -d '{"firstName":"Test","lastName":"Contact","email":"test@example.com"}'
 ```
@@ -254,8 +254,8 @@ GROUP BY status;
 ### 📈 Monitoring Configuration
 ```bash
 # Verify monitoring endpoints
-curl https://your-oauth-app.up.railway.app/health
-curl https://your-api-app.up.railway.app/health
+curl https://api.engageautomations.com/health
+curl https://api-server-production-8a99.up.railway.app/health
 
 # Check Railway metrics
 railway status --project oauth-server
@@ -394,8 +394,8 @@ grep "POST /proxy/hl" /var/log/oauth-server.log | \
 
 ```bash
 # Quick health checks
-curl -f https://your-oauth-app.up.railway.app/health || echo "OAuth server down"
-curl -f https://your-api-app.up.railway.app/health || echo "API server down"
+curl -f https://api.engageautomations.com/health || echo "OAuth server down"
+curl -f https://api-server-production-8a99.up.railway.app/health || echo "API server down"
 
 # Check Railway deployment status
 railway status --project oauth-server

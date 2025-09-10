@@ -63,7 +63,7 @@ cd "c:\Users\Computer\Documents\Engage Automations\GoHighLevel Ouath 2.1"
 ### Update HighLevel App Settings
 1. **Copy OAuth URL** from Railway deployment output:
    ```
-   https://<oauth-app>.up.railway.app/oauth/callback
+   https://api.engageautomations.com/oauth/callback
    ```
 
 2. **Update HighLevel Portal**:
@@ -118,13 +118,13 @@ See **🧯 Triage Fast** section below before proceeding.
 railway run --service oauth-server -- psql $DATABASE_URL -c "SELECT id, tenant_id, tenant_type, created_at FROM installations;"
 
 # Check admin endpoint (tokens should be masked)
-curl -H "Authorization: Bearer <S2S_JWT>" https://<oauth-app>.up.railway.app/admin/installations
+curl -H "Authorization: Bearer <S2S_JWT>" https://api.engageautomations.com/admin/installations
 ```
 
 ### Test API Integration
 ```powershell
 # Test live data retrieval
-curl "https://<api-app>.up.railway.app/test/contacts?tenantId=<LOCATION_OR_AGENCY_ID>&scope=location"
+curl "https://api-server-production-8a99.up.railway.app/test/contacts?tenantId=<LOCATION_OR_AGENCY_ID>&scope=location"
 ```
 
 **Expected**: HTTP 200 with live data or empty list
@@ -147,7 +147,7 @@ railway logs --service oauth-server --lines 100 | Select-String -Pattern "access
 
 # Verify rate limiting
 for ($i=1; $i -le 10; $i++) {
-    curl -w "%{http_code}\n" https://<oauth-app>.up.railway.app/proxy/hl
+    curl -w "%{http_code}\n" https://api.engageautomations.com/proxy/hl
 }
 ```
 
@@ -288,10 +288,10 @@ railway rollback --service oauth-server
   - API: `https://github.com/you/api-server.git`
 
 ### Monitoring URLs
-- **OAuth Health**: `https://<oauth-app>.up.railway.app/health`
-- **API Health**: `https://<api-app>.up.railway.app/health`
-- **Metrics**: `https://<oauth-app>.up.railway.app/metrics`
-- **Admin Panel**: `https://<oauth-app>.up.railway.app/admin/installations`
+- **OAuth Health**: `https://api.engageautomations.com/health`
+- **API Health**: `https://api-server-production-8a99.up.railway.app/health`
+- **Metrics**: `https://api.engageautomations.com/metrics`
+- **Admin Panel**: `https://api.engageautomations.com/admin/installations`
 
 ### Quick Commands
 ```powershell

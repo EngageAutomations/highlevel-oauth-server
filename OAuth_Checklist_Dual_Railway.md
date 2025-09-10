@@ -30,7 +30,7 @@ This checklist guides you through setting up two separate Railway projects for H
 ```bash
 HL_CLIENT_ID=68474924a586bce22a6e64f7-mfa3rwol
 HL_CLIENT_SECRET=54e5b66e-88a6-4f71-a8d1-b1c6e0270c88
-REDIRECT_URI=https://<oauth-app>.up.railway.app/oauth/callback
+REDIRECT_URI=https://api.engageautomations.com/oauth/callback
 DATABASE_URL=<from Railway Postgres>
 ENCRYPTION_KEY=<openssl rand -base64 32>
 S2S_SHARED_SECRET=<openssl rand -base64 32>
@@ -38,7 +38,7 @@ S2S_SHARED_SECRET=<openssl rand -base64 32>
 
 ### API Server Variables
 ```bash
-OAUTH_BASE_URL=https://<oauth-app>.up.railway.app
+OAUTH_BASE_URL=https://api.engageautomations.com
 S2S_SHARED_SECRET=<same value as oauth-server>
 DEFAULT_SCOPE=location
 DEFAULT_TENANT_ID=<optional for dev>
@@ -81,7 +81,7 @@ CREATE INDEX IF NOT EXISTS idx_installations_agency_id ON installations(agency_i
 ## ✅ Step 5: Configure HighLevel App
 
 - [ ] Register app in HighLevel Developer Portal
-- [ ] Set Redirect URI: `https://<oauth-app>.up.railway.app/oauth/callback`
+- [ ] Set Redirect URI: `https://api.engageautomations.com/oauth/callback`
 - [ ] Update Client ID/Secret in oauth-server Railway variables
 - [ ] Configure scopes: `contacts.readonly,calendars.read,campaign.readonly,locations.readonly,users.readonly`
 
@@ -264,13 +264,13 @@ rate(proxy_request_duration_seconds[5m])
 1. **Install Flow**
    ```bash
    # Test marketplace install
-   curl "https://<oauth-server>.up.railway.app/oauth/callback?code=test_code&state=test_state"
+   curl "https://api.engageautomations.com/oauth/callback?code=test_code&state=test_state"
    ```
 
 2. **Token Validation**
    ```bash
    # Test proxy endpoint
-   curl -X POST "https://<oauth-server>.up.railway.app/proxy/hl" \
+   curl -X POST "https://api.engageautomations.com/proxy/hl" \
      -H "Authorization: Bearer <s2s-token>" \
      -H "Content-Type: application/json" \
      -d '{"endpoint": "/locations", "method": "GET"}'
@@ -278,15 +278,15 @@ rate(proxy_request_duration_seconds[5m])
 
 3. **Health Checks**
    ```bash
-   curl "https://<oauth-server>.up.railway.app/health"
-   curl "https://<api-server>.up.railway.app/health"
+   curl "https://api.engageautomations.com/health"
+    curl "https://api-server-production-8a99.up.railway.app/health"
    ```
 
 4. **Metrics Validation**
    ```bash
    # Test metrics endpoints (requires service token)
    curl -H "Authorization: Bearer <service-token>" \
-     "https://<oauth-server>.up.railway.app/metrics"
+     "https://api.engageautomations.com/metrics"
    ```
 
 ---

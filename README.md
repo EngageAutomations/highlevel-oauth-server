@@ -71,7 +71,7 @@ This deployment kit provides everything needed to deploy a production-ready High
 2. **HighLevel App Setup:**
    - Create app in HighLevel Marketplace
    - Note your `CLIENT_ID` and `CLIENT_SECRET`
-   - Set redirect URI to: `https://temp-url.railway.app/oauth/callback` (will update after deploy)
+   - Set redirect URI to: `https://api.engageautomations.com/oauth/callback`
 
 ### Automated Deployment
 
@@ -130,7 +130,7 @@ cd "path\to\HighLevel OAuth 2.1"
 ```bash
 railway variables set HL_CLIENT_ID="your-client-id"
 railway variables set HL_CLIENT_SECRET="your-client-secret"
-railway variables set REDIRECT_URI="https://your-oauth-url.railway.app/oauth/callback"
+railway variables set REDIRECT_URI="https://api.engageautomations.com/oauth/callback"
 railway variables set DATABASE_URL="postgresql://..."  # From Railway Postgres
 railway variables set ENCRYPTION_KEY="$(openssl rand -base64 32)"
 railway variables set S2S_SHARED_SECRET="$(openssl rand -base64 32)"
@@ -138,7 +138,7 @@ railway variables set S2S_SHARED_SECRET="$(openssl rand -base64 32)"
 
 **API Server:**
 ```bash
-railway variables set OAUTH_BASE_URL="https://your-oauth-url.railway.app"
+railway variables set OAUTH_BASE_URL="https://api.engageautomations.com"
 railway variables set S2S_SHARED_SECRET="same-as-oauth-server"
 railway variables set DEFAULT_SCOPE="location"
 ```
