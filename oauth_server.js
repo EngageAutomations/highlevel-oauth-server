@@ -268,22 +268,71 @@ async function initializeDatabase() {
       `);
       logger.info('✅ oauth_used_codes index created/verified');
       
+      // Create hl_installations table
+      logger.info('Creating hl_installations table...');
+      await db.query(`
+        CREATE TABLE IF NOT EXISTS hl_installations (
+          id                SERIAL PRIMARY KEY,
+          location_id       TEXT UNIQUE NOT NULL,
+          agency_id         TEXT,
+          access_token      TEXT NOT NULL,
+          refresh_token     TEXT NOT NULL,
+          scopes            TEXT[] NOT NULL,
+          expires_at        TIMESTAMPTZ NOT NULL,
+          created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          last_token_refresh TIMESTAMPTZ,
+          status            TEXT NOT NULL DEFAULT 'active',
+          install_ip        INET,
+          user_agent        TEXT
+        );
+      `);
+      logger.info('✅ hl_installations table created/verified');
+      
+      // Create indexes for hl_installations
+      logger.info('Creating hl_installations indexes...');
+      await db.query(`
+        CREATE INDEX IF NOT EXISTS idx_hl_installations_expires ON hl_installations(expires_at);
+        CREATE INDEX IF NOT EXISTS idx_hl_installations_agency ON hl_installations(agency_id);
+        CREATE INDEX IF NOT EXISTS idx_hl_installations_status ON hl_installations(status);
+      `);
+      logger.info('✅ hl_installations indexes created/verified');
+      
+      // Create mark_tokens_for_refresh function
+      logger.info('Creating mark_tokens_for_refresh function...');
+      await db.query(`
+        CREATE OR REPLACE FUNCTION mark_tokens_for_refresh(hours_before_expiry INTEGER)
+        RETURNS TABLE(tenant_id TEXT, expires_at TIMESTAMPTZ) AS $$
+        BEGIN
+          RETURN QUERY
+          SELECT 
+            location_id as tenant_id,
+            hi.expires_at
+          FROM hl_installations hi
+          WHERE hi.status = 'active'
+            AND hi.expires_at <= NOW() + (hours_before_expiry || ' hours')::INTERVAL
+            AND (hi.last_token_refresh IS NULL OR hi.last_token_refresh < NOW() - INTERVAL '30 minutes');
+        END;
+        $$ LANGUAGE plpgsql;
+      `);
+      logger.info('✅ mark_tokens_for_refresh function created/verified');
+      
       // Verify tables exist
       const result = await db.query(`
         SELECT table_name FROM information_schema.tables 
         WHERE table_schema = 'public' 
-        AND table_name IN ('oauth_state', 'oauth_used_codes')
+        AND table_name IN ('oauth_state', 'oauth_used_codes', 'hl_installations')
         ORDER BY table_name;
       `);
       
       const tables = result.rows.map(r => r.table_name);
       logger.info('📋 Verified tables exist:', tables);
       
-      if (tables.length === 2) {
+      if (tables.length === 3) {
         logger.info('🎉 Database initialization completed successfully!');
         return; // Success, exit the retry loop
       } else {
-        throw new Error(`Expected 2 tables, found ${tables.length}: ${tables.join(', ')}`);
+        throw new Error(`Expected 3 tables, found ${tables.length}: ${tables.join(', ')}`);
       }
       
     } catch (error) {
