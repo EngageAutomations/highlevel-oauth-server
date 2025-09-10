@@ -33,7 +33,7 @@
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
-// const rateLimit = require('express-rate-limit'); // Temporarily disabled
+// const rateLimit = require('express-rate-limit'); // Removed - not needed for oauth server
 const { Pool } = require('pg');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
