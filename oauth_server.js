@@ -232,11 +232,13 @@ async function initializeDatabase() {
         expires_at   TIMESTAMPTZ NOT NULL
       );
     `);
+    logger.info('✅ oauth_state table created/verified');
     
     // Create index for oauth_state
     await db.query(`
       CREATE INDEX IF NOT EXISTS idx_oauth_state_expires ON oauth_state(expires_at);
     `);
+    logger.info('✅ oauth_state index created/verified');
     
     // Create oauth_used_codes table
     await db.query(`
@@ -246,13 +248,15 @@ async function initializeDatabase() {
         expires_at  TIMESTAMPTZ NOT NULL
       );
     `);
+    logger.info('✅ oauth_used_codes table created/verified');
     
     // Create index for oauth_used_codes
     await db.query(`
       CREATE INDEX IF NOT EXISTS idx_oauth_used_codes_expires ON oauth_used_codes(expires_at);
     `);
+    logger.info('✅ oauth_used_codes index created/verified');
     
-    logger.info('✅ OAuth tables ready');
+    logger.info('✅ All OAuth tables ready');
   } catch (error) {
     if (error.message.includes('connection')) {
       logger.error('Database connection failed:', error);
@@ -261,7 +265,10 @@ async function initializeDatabase() {
       logger.error('Failed to create OAuth tables:', {
         error: error.message,
         stack: error.stack,
-        code: error.code
+        code: error.code,
+        sqlState: error.code,
+        detail: error.detail,
+        hint: error.hint
       });
       // Don\'t exit - but this is a serious issue
       throw error;
@@ -1158,7 +1165,16 @@ process.on('SIGTERM', () => {
       stack: error.stack,
       code: error.code
     });
-    process.exit(1);
+    
+    // Try to start server anyway but log the issue
+    logger.warn('Starting server despite initialization failure - tables may need manual creation');
+    
+    const server = app.listen(config.port, () => {
+      logger.info(`🚀 OAuth Server running on port ${config.port} (with initialization warnings)`);
+      logger.info(`Environment: ${config.nodeEnv}`);
+      logger.info(`Redirect URI: ${config.redirectUri}`);
+      logger.info(`Commit SHA: ${process.env.RAILWAY_GIT_COMMIT_SHA || process.env.COMMIT_SHA || 'unknown'}`);
+    });
   }
 })();
 
