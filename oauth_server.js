@@ -158,6 +158,7 @@ app.get('/whoami', (req, res) => {
     timestamp: new Date().toISOString(),
     version: '1.0.1'
   });
+});
 
 // Feature flags endpoint for runtime configuration visibility
 app.get('/feature-flags', (req, res) => {
