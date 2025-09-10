@@ -664,6 +664,26 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Force table creation endpoint
+app.get('/admin/create-tables', async (req, res) => {
+  try {
+    logger.info('Manual table creation requested');
+    await initializeDatabase();
+    res.json({ 
+      status: 'success', 
+      message: 'Tables created successfully',
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    logger.error('Manual table creation failed:', error);
+    res.status(500).json({ 
+      status: 'error', 
+      message: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 // Force table creation endpoint (for debugging)
 app.post('/admin/create-tables', async (req, res) => {
   try {
