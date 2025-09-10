@@ -152,12 +152,12 @@ app.use((req, res, next) => {
 
 // Service identification endpoint
 app.get('/whoami', (req, res) => {
-  res.json({ 
-    app: 'oauth-server', 
-    commit: process.env.RAILWAY_GIT_COMMIT_SHA || 'unknown',
-    timestamp: new Date().toISOString()
+  res.json({
+    app: 'oauth-server',
+    commit: process.env.RAILWAY_GIT_COMMIT_SHA || process.env.COMMIT_SHA || 'unknown',
+    timestamp: new Date().toISOString(),
+    version: '1.0.1'
   });
-});
 
 // Feature flags endpoint for runtime configuration visibility
 app.get('/feature-flags', (req, res) => {
