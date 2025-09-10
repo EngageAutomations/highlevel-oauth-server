@@ -34,6 +34,7 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 // const rateLimit = require('express-rate-limit'); // Removed - not needed for oauth server
+const cookieParser = require('cookie-parser');
 const { Pool } = require('pg');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
@@ -142,6 +143,7 @@ app.use(cors({
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(cookieParser());
 
 // Service fingerprinting
 app.use((req, res, next) => {
@@ -896,6 +898,14 @@ app.get('/oauth/start', async (req, res) => {
        saveState(state, { clientId, redirect }, 10 * 60 * 1000);
        logger.info('OAuth state created with legacy in-memory storage', { state: state.substring(0, 8) + '...' });
      }
+
+     // Set cookie fallback for state (belt-and-suspenders approach)
+     res.cookie('hl_oauth_state', state, {
+       httpOnly: true,
+       secure: true,
+       sameSite: 'lax',   // allows HL → your domain redirect to send cookie
+       maxAge: 20 * 60 * 1000
+     });
     
      // If caller asks for JSON (e.g., your CLI/tests), honor it; else 302 for browsers/Marketplace
      const wantsJson = 
@@ -926,11 +936,18 @@ if (ff('OAUTH_CALLBACK_V2')) {
       let st;
       if (ff('OAUTH_STATE_PERSISTENCE')) {
         st = await consumeState(state);
+        
+        // Fallback: if DB lookup missed, compare cookie
+        if (!st && req.cookies?.hl_oauth_state === state) {
+          logger.info('DB missed but cookie matched - using cookie fallback', { state: state?.substring(0, 8) + '...' });
+          st = { clientId: config.hlClientId, redirect: config.redirectUri };
+        }
+        
         if (!st) {
           logger.warn('Invalid or expired state (Postgres)', { state: state?.substring(0, 8) + '...' });
           return res.status(400).json({ error: 'Invalid or expired state' });
         }
-        logger.info('State verified with Postgres persistence', { state: state.substring(0, 8) + '...' });
+        logger.info('State verified with Postgres persistence', { state: state?.substring(0, 8) + '...' });
       } else {
         // Fallback to legacy in-memory storage
         st = loadState(state);
@@ -938,8 +955,11 @@ if (ff('OAUTH_CALLBACK_V2')) {
           logger.warn('Invalid or expired state (legacy)', { state: state?.substring(0, 8) + '...' });
           return res.status(400).json({ error: 'Invalid or expired state' });
         }
-        logger.info('State verified with legacy in-memory storage', { state: state.substring(0, 8) + '...' });
+        logger.info('State verified with legacy in-memory storage', { state: state?.substring(0, 8) + '...' });
       }
+      
+      // Clear cookie on success path
+      res.clearCookie('hl_oauth_state', { httpOnly: true, secure: true, sameSite: 'lax' });
       
       // Sanity check - helps catch common mismatch
       if (st.clientId !== config.hlClientId || st.redirect !== config.redirectUri) {
