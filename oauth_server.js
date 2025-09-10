@@ -691,6 +691,12 @@ const ALLOWED_ENDPOINTS = [
   /^\/locations\/[\w-]+\/tags/,
   /^\/locations\/[\w-]+\/workflows/,
   
+  // Agency/Company endpoints
+  /^\/companies\/[\w-]+\/locations$/,
+  /^\/agencies\/[\w-]+\/locations$/,
+  /^\/companies\/[\w-]+$/,
+  /^\/agencies\/[\w-]+$/,
+  
   // Contact endpoints
   /^\/contacts\/[\w-]+$/,
   /^\/contacts\/[\w-]+\/notes/,
@@ -704,6 +710,10 @@ const ALLOWED_ENDPOINTS = [
   // Calendar endpoints
   /^\/calendars\/[\w-]+\/events/,
   /^\/calendars\/[\w-]+\/slots/,
+  
+  // Products and stores endpoints
+  /^\/products/,
+  /^\/stores/,
 ];
 
 function isEndpointAllowed(endpoint) {
@@ -1009,16 +1019,30 @@ if (ff('OAUTH_CALLBACK_V2')) {
           params.set('code', code);
           params.set('redirect_uri', config.redirectUri);
           
-          // REMOVED: user_type parameter - HighLevel API no longer accepts it
-          // HighLevel now determines user type automatically from the authorization code
+          // Include user_type parameter - required for proper tenant identification
+          if (userType) {
+            params.set('user_type', userType);  // <- DO NOT DELETE
+          }
           
           return params;
         };
+
+        // Assert middleware to prevent regressions
+        function assertUserType(formData) {
+          const userTypeValue = formData.get('user_type');
+          if (!userTypeValue || !['location','company'].includes(userTypeValue)) {
+            throw new Error('Token exchange missing valid user_type');
+          }
+        }
 
         let tokens;
         
         const attemptTokenExchange = async () => {
           const formData = createTokenForm();
+          
+          // Assert user_type is present before token exchange
+          assertUserType(formData);
+          
           console.log('TOKEN EXCHANGE ATTEMPT:', {
             form_params: Object.fromEntries(formData.entries()),
             endpoint: `${config.hlApiBase}/oauth/token`
@@ -1084,10 +1108,39 @@ if (ff('OAUTH_CALLBACK_V2')) {
          });
        }
 
-      // Save installation with discovered tenant
+       // Normalize dual storage: for location installs, fetch parent agency_id
+       let normalizedLocationId = finalLocationId;
+       let normalizedAgencyId = finalAgencyId;
+       
+       if (finalLocationId && !finalAgencyId) {
+         try {
+           // Fetch location details to get parent agency_id
+           const locationResponse = await axios.get(`${config.hlApiBase}/locations/${finalLocationId}`, {
+             headers: { 'Authorization': `Bearer ${tokens.access_token}` },
+             timeout: 10000
+           });
+           
+           const parentAgencyId = locationResponse.data?.location?.companyId || locationResponse.data?.companyId;
+           if (parentAgencyId) {
+             normalizedAgencyId = parentAgencyId;
+             logger.info('Fetched parent agency for location install', {
+               locationId: finalLocationId,
+               parentAgencyId: parentAgencyId
+             });
+           }
+         } catch (err) {
+           logger.warn('Failed to fetch parent agency for location', {
+             locationId: finalLocationId,
+             error: err.response?.data || err.message
+           });
+           // Continue with installation even if parent agency fetch fails
+         }
+       }
+
+      // Save installation with normalized tenant data (both IDs when possible)
        const installationId = await InstallationDB.saveInstallation(
-         finalLocationId,
-         finalAgencyId,
+         normalizedLocationId,
+         normalizedAgencyId,
          tokens,
          scopes,
          req
