@@ -655,7 +655,34 @@ function isEndpointAllowed(endpoint) {
 // Routes
 
 // Health check
-app.get('/health', (req, res) => {
+app.get('/health', async (req, res) => {
+  // If create_tables parameter is provided, attempt table creation
+  if (req.query.create_tables === 'true') {
+    try {
+      logger.info('Table creation requested via health endpoint');
+      await initializeDatabase();
+      res.json({ 
+        status: 'healthy', 
+        timestamp: new Date().toISOString(),
+        version: '2.1.0',
+        environment: config.nodeEnv,
+        tables_created: true
+      });
+      return;
+    } catch (error) {
+      logger.error('Table creation failed via health endpoint:', error);
+      res.status(500).json({ 
+        status: 'error', 
+        timestamp: new Date().toISOString(),
+        version: '2.1.0',
+        environment: config.nodeEnv,
+        tables_created: false,
+        error: error.message
+      });
+      return;
+    }
+  }
+  
   res.json({
     status: 'healthy',
     timestamp: new Date().toISOString(),
