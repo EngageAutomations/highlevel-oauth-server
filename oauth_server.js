@@ -41,6 +41,42 @@ const axios = require('axios');
 const winston = require('winston');
 const { promisify } = require('util');
 
+// OAuth State Persistence Kit - Import helpers
+const { createState, consumeState, markCodeUsed, isCodeUsed, cleanupExpired } = require('./helpers/oauthStore.js');
+
+// Feature flag helper
+const ff = (k) => process.env[k] === '1';
+
+// Legacy code deduplication (kept for backward compatibility)
+const usedCodes = new Map(); // code -> expiresAt
+const markUsed = (code, ms = 5 * 60 * 1000) => usedCodes.set(code, Date.now() + ms);
+const isUsed = (code) => {
+  const t = usedCodes.get(code);
+  if (!t) return false;
+  if (Date.now() > t) { usedCodes.delete(code); return false; }
+  return true;
+};
+
+// State verification to prevent client/redirect mismatches
+const stateStore = new Map(); // state -> {clientId, redirect, exp}
+const saveState = (state, data, ttlMs) => stateStore.set(state, {...data, exp: Date.now() + ttlMs});
+const loadState = (state) => {
+  const v = stateStore.get(state);
+  if (!v) return null;
+  if (Date.now() > v.exp) { stateStore.delete(state); return null; }
+  return v;
+};
+
+// Cleanup expired codes every 10 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [code, expiresAt] of usedCodes.entries()) {
+    if (now > expiresAt) {
+      usedCodes.delete(code);
+    }
+  }
+}, 10 * 60 * 1000);
+
 // Configuration
 const config = {
   port: process.env.PORT || 3000,
@@ -124,6 +160,8 @@ app.get('/feature-flags', (req, res) => {
   res.json({
     OAUTH_CALLBACK_V2: process.env.OAUTH_CALLBACK_V2,
     OAUTH_CALLBACK_LOG: process.env.OAUTH_CALLBACK_LOG,
+    OAUTH_STATE_PERSISTENCE: process.env.OAUTH_STATE_PERSISTENCE,
+    STATE_TTL_MIN: process.env.STATE_TTL_MIN,
     commit: process.env.RAILWAY_GIT_COMMIT_SHA || 'unknown'
   });
 });
@@ -563,115 +601,269 @@ app.get('/metrics', authenticateS2S, async (req, res) => {
   }
 });
 
-// Read feature flags for OAuth behavior (safe defaults)
-const OAUTH_CALLBACK_V2 = process.env.OAUTH_CALLBACK_V2 === '1';
-const OAUTH_CALLBACK_LOG = process.env.OAUTH_CALLBACK_LOG === '1';
+// Helper reads flags at request-time (no restart needed)
+const ff = (k) => process.env[k] === '1';
 
-// OAuth callback
-app.get('/oauth/callback', /* strictLimiter, */ async (req, res) => {
-  // Debug logging if enabled
-  if (OAUTH_CALLBACK_LOG) {
-    const safeQuery = { ...req.query };
-    if (typeof safeQuery.code === 'string' && safeQuery.code.length) {
-      safeQuery.code = '[redacted]';
-    }
-    logger.info('CALLBACK DEBUG', {
-      originalUrl: req.originalUrl,
-      method: req.method,
-      query: safeQuery,
-      headers: {
-        host: req.headers.host,
-        'user-agent': req.headers['user-agent'],
-        'cf-connecting-ip': req.headers['cf-connecting-ip'],
-        'x-forwarded-for': req.headers['x-forwarded-for']
-      }
+// Tripwire logger (earliest)
+app.use((req, res, next) => {
+  if (req.path === '/oauth/callback') {
+    console.log('TRIPWIRE: reached app-level for /oauth/callback', {
+      url: req.originalUrl,
+      v2: ff('OAUTH_CALLBACK_V2'),
+      v1: !ff('OAUTH_CALLBACK_V2')
     });
   }
+  next();
+});
 
-  // Feature-flagged behavior: V1 (legacy) vs V2 (robust)
-  if (!OAUTH_CALLBACK_V2) {
-    try {
-      const { code, location_id } = req.query;
-      if (!code || !location_id) {
-        return res.status(400).json({ error: 'Missing required parameters: code and location_id' });
-      }
-      // Exchange and store for location installs only (legacy behavior)
-      const tokens = await HighLevelAPI.exchangeCodeForTokens(code, location_id, null);
-      const scopes = tokens.scope ? tokens.scope.split(' ') : [];
-      await InstallationDB.saveInstallation(location_id, null, tokens, scopes, req);
-      return res.send('✅ Connected (V1). You can close this window.');
-    } catch (error) {
-      logger.error('OAuth callback (V1) failed:', {
-        error: error.message,
-        data: error.response?.data,
-        query: req.query,
-        ip: req.ip
-      });
-      return res.status(500).json({ error: 'OAuth callback failed', detail: error.response?.data || error.message });
-    }
-  }
-
-  // ===== V2 (new, robust logic) =====
+// OAuth start endpoint - generates consistent authorize URLs
+app.get('/oauth/start', async (req, res) => {
   try {
-    const { code, location_id, agency_id, company_id } = req.query;
-    if (!code) {
-      logger.warn('OAuth callback missing code parameter', { query: req.query, ip: req.ip });
-      return res.status(400).json({ error: 'Missing required parameter: code', got: req.query });
-    }
+    const clientId = config.hlClientId;
+    const redirect = config.redirectUri;
+    const scopes = (process.env.HL_SCOPES || '').split(',').map(s => s.trim()).join(' ');
+    
+    // Use the "choose location" authorize URL from HL docs
+    const auth = new URL('https://marketplace.leadconnectorhq.com/choose-location');
+    auth.searchParams.set('response_type', 'code');
+    auth.searchParams.set('client_id', clientId);
+    auth.searchParams.set('redirect_uri', redirect);
+    if (scopes) auth.searchParams.set('scope', scopes);
+    
+    // Generate state for verification
+    const state = crypto.randomBytes(12).toString('base64url');
+    auth.searchParams.set('state', state);
+    
+    // Store state using Postgres-backed persistence (errorfix2)
+     if (ff('OAUTH_STATE_PERSISTENCE')) {
+       await createState(state, { clientId, redirect }, 10 * 60 * 1000);
+       logger.info('OAuth state created with Postgres persistence', { state: state.substring(0, 8) + '...' });
+     } else {
+       // Fallback to legacy in-memory storage
+       saveState(state, { clientId, redirect }, 10 * 60 * 1000);
+       logger.info('OAuth state created with legacy in-memory storage', { state: state.substring(0, 8) + '...' });
+     }
+    
+     res.json({ authorize_url: auth.toString() });
+   } catch (error) {
+     logger.error('Error in /oauth/start endpoint', { error: error.message, stack: error.stack });
+     res.status(500).json({ error: 'Internal server error' });
+   }
+ });
 
-    // Decide user_type + tenant key
-    let locationId = location_id || null;
-    let companyId = company_id || agency_id || null; // HighLevel expects 'company' for agency installs
+// STRICT: if V2 is on, do NOT register V1 at all.
+if (ff('OAUTH_CALLBACK_V2')) {
+  app.get('/oauth/callback', async (req, res) => {
+    console.log('HANDLER: V2 main entered', { query: { ...req.query, code: '[redacted]' } });
+    try {
+      const { code, state, location_id, company_id, agency_id } = req.query;
 
-    // Exchange the code for tokens
-    const tokens = await HighLevelAPI.exchangeCodeForTokens(code, locationId, companyId);
-    const scopes = tokens.scope ? tokens.scope.split(' ') : [];
-
-    // Optional: best-effort tenant introspection if none present
-    if (!locationId && !companyId && tokens.access_token) {
-      try {
-        const me = await axios.get(`${config.hlApiBase}/users/me`, {
-          headers: { Authorization: `Bearer ${tokens.access_token}` },
-          timeout: 15000
-        });
-        companyId = me.data?.companyId || me.data?.agencyId || companyId || null;
-        locationId = me.data?.locationId || locationId || null;
-      } catch (e) {
-        logger.warn('Tenant introspection failed:', e.response?.data || e.message);
+      if (!code) return res.status(400).json({ error: 'Missing required parameter: code' });
+      
+      // Verify state using Postgres-backed persistence (errorfix2)
+      let st;
+      if (ff('OAUTH_STATE_PERSISTENCE')) {
+        st = await consumeState(state);
+        if (!st) {
+          logger.warn('Invalid or expired state (Postgres)', { state: state?.substring(0, 8) + '...' });
+          return res.status(400).json({ error: 'Invalid or expired state' });
+        }
+        logger.info('State verified with Postgres persistence', { state: state.substring(0, 8) + '...' });
+      } else {
+        // Fallback to legacy in-memory storage
+        st = loadState(state);
+        if (!st) {
+          logger.warn('Invalid or expired state (legacy)', { state: state?.substring(0, 8) + '...' });
+          return res.status(400).json({ error: 'Invalid or expired state' });
+        }
+        logger.info('State verified with legacy in-memory storage', { state: state.substring(0, 8) + '...' });
       }
+      
+      // Sanity check - helps catch common mismatch
+      if (st.clientId !== config.hlClientId || st.redirect !== config.redirectUri) {
+        logger.error('Client/redirect mismatch vs. authorize state', { 
+          expected: { clientId: config.hlClientId, redirect: config.redirectUri },
+          actual: { clientId: st.clientId, redirect: st.redirect }
+        });
+        return res.status(400).json({ error: 'Client/redirect mismatch vs. authorize state' });
+      }
+      
+      // Check for code reuse using Postgres-backed deduplication (errorfix2)
+      if (ff('OAUTH_STATE_PERSISTENCE')) {
+        const codeUsed = await isCodeUsed(code);
+        if (codeUsed) {
+          logger.warn('CODE REUSE DETECTED (Postgres)', { code: code.substring(0, 10) + '...' });
+          return res.status(409).json({ error: 'Auth code already used' });
+        }
+        // Mark code as used immediately
+        await markCodeUsed(code, 5 * 60 * 1000); // 5 minute TTL
+        logger.info('Code marked as used (Postgres)', { code: code.substring(0, 10) + '...' });
+      } else {
+        // Fallback to legacy in-memory code deduplication
+        if (isUsed(code)) {
+          logger.warn('CODE REUSE DETECTED (legacy)', { code: code.substring(0, 10) + '...' });
+          return res.status(409).json({ error: 'Auth code already used' });
+        }
+        // Mark code as used immediately
+        markUsed(code, 5 * 60 * 1000); // 5 minute TTL
+        logger.info('Code marked as used (legacy)', { code: code.substring(0, 10) + '...' });
+      }
+
+      // Robust approach: exchange code first, then introspect if tenant missing
+        const hadTenant = !!(location_id || company_id || agency_id);
+        const hasLocation = Boolean(location_id);
+        const hasCompany = Boolean(company_id || agency_id);
+        
+        // Pick the correct user_type exactly as HighLevel expects (lowercase)
+        let userType = hasLocation ? 'location' : (hasCompany ? 'company' : undefined);
+
+        const createTokenForm = (type) => {
+          const params = new URLSearchParams();
+          params.set('client_id', config.hlClientId);
+          params.set('client_secret', config.hlClientSecret);
+          params.set('grant_type', 'authorization_code');
+          params.set('code', code);
+          params.set('redirect_uri', config.redirectUri);
+          
+          // Only set user_type if it's a valid enum value (lowercase)
+          if (type === 'location' || type === 'company') {
+            params.set('user_type', type);
+          }
+          return params;
+        };
+
+        let tokens;
+        let attempted = [];
+        
+        const attemptTokenExchange = async (ut) => {
+          attempted.push(ut);
+          const formData = createTokenForm(ut);
+          console.log('TOKEN EXCHANGE ATTEMPT:', {
+            user_type: ut,
+            form_params: Object.fromEntries(formData.entries()),
+            endpoint: `${config.hlApiBase}/oauth/token`
+          });
+          const response = await axios.post(`${config.hlApiBase}/oauth/token`, formData.toString(), {
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            timeout: 15000
+          });
+          return response.data;
+        };
+
+        try {
+          if (userType) {
+            // We have a hint, try it first
+            tokens = await attemptTokenExchange(userType);
+          } else {
+            // No tenant hint, try location first
+            try {
+              tokens = await attemptTokenExchange('location');
+              userType = 'location';
+            } catch (e1) {
+              const isInvalidGrant = (e1.response?.status === 400 || e1.response?.status === 401) && 
+                String(e1.response?.data?.error || e1.response?.data || '').includes('invalid_grant');
+              if (!isInvalidGrant) throw e1;
+              
+              // Try company
+              tokens = await attemptTokenExchange('company');
+              userType = 'company';
+            }
+          }
+        } catch (err) {
+          const status = err.response?.status || 500;
+          const data = err.response?.data;
+          console.error('TOKEN EXCHANGE ERROR', {
+            status,
+            data,
+            sending: {
+              endpoint: `${config.hlApiBase}/oauth/token`,
+              user_type: userType || attempted.join(','),
+              redirect_uri: config.redirectUri,
+            },
+            had: {
+              location_id: !!location_id,
+              company_id: !!company_id,
+              agency_id: !!agency_id,
+            }
+          });
+          // Return the actual status code from HighLevel instead of always 500
+          return res.status(status).json({ error: 'OAuth callback failed', detail: data || err.message });
+        }
+        
+        // Mark code as used after successful exchange
+        markUsed(code);
+      const scopes = tokens.scope ? tokens.scope.split(' ') : [];
+
+      // Discover tenant via /users/me introspection
+       let finalLocationId = location_id || null;
+       let finalAgencyId = company_id || agency_id || null;
+       
+       if (!hadTenant || (!finalLocationId && !finalAgencyId)) {
+         try {
+           const me = await axios.get(`${config.hlApiBase}/users/me`, {
+             headers: { Authorization: `Bearer ${tokens.access_token}` },
+             timeout: 15000
+           });
+           
+           // Prefer query params if present, else use introspected values
+           finalLocationId = finalLocationId || me.data?.locationId || null;
+           finalAgencyId = finalAgencyId || me.data?.companyId || me.data?.agencyId || null;
+         } catch (e) {
+           logger.warn('Tenant introspection failed:', e.response?.data || e.message);
+         }
+       }
+       
+       // Final check: if still no tenant after introspection
+       if (!finalLocationId && !finalAgencyId) {
+         return res.status(202).json({
+           error: 'Missing tenant identifier',
+           detail: 'Provider did not supply tenant info; please re-install and explicitly choose Agency or a Location.'
+         });
+       }
+
+      // Save installation with discovered tenant
+       const installationId = await InstallationDB.saveInstallation(
+         finalLocationId,
+         finalAgencyId,
+         tokens,
+         scopes,
+         req
+       );
+
+       logger.info('OAuth installation successful (V2)', {
+         installationId,
+         locationId: finalLocationId,
+         agencyId: finalAgencyId,
+         scopes,
+         hadTenant,
+         userType
+       });
+
+      return res.send('✅ Connected (V2). You can close this window.');
+    } catch (err) {
+      logger.error('V2 callback handler error:', err);
+      return res.status(500).json({ error: 'OAuth callback failed', detail: err.message });
     }
-
-    // If still no tenant, accept but ask for explicit re-install
-    if (!locationId && !companyId) {
-      return res.status(202).send('Connected, but tenant not provided. Please re-install choosing Agency or Location explicitly.');
+  });
+} else {
+  // Only register V1 when V2 is OFF (legacy behavior)
+  app.get('/oauth/callback', (req, res) => {
+    console.log('HANDLER: V1 legacy entered', { query: { ...req.query, code: '[redacted]' } });
+    const { code, location_id } = req.query;
+    if (!code || !location_id) {
+      return res.status(400).json({ error: 'Missing required parameters: code and location_id' });
     }
+    // Legacy flow would go here - but we're keeping V2 enabled
+    return res.status(500).json({ error: 'V1 legacy handler should not be active' });
+  });
+}
 
-    // Save installation
-    const installationId = await InstallationDB.saveInstallation(
-      locationId,
-      companyId,
-      tokens,
-      scopes,
-      req
-    );
-
-    logger.info('OAuth installation successful (V2)', {
-      installationId,
-      locationId,
-      agencyId: companyId,
-      scopes
-    });
-
-    return res.send('✅ Connected to HighLevel (V2). You can close this window.');
-  } catch (error) {
-    logger.error('OAuth callback (V2) failed:', {
-      error: error.message,
-      data: error.response?.data,
-      query: req.query,
-      ip: req.ip
-    });
-    return res.status(500).json({ error: 'OAuth callback failed', detail: error.response?.data || error.message });
-  }
+// Ultimate catch-all to prove ordering
+app.all('/oauth/callback', (req, res) => {
+  console.error('FALLBACK: reached catch-all after handlers. Route ordering wrong.', {
+    query: { ...req.query, code: '[redacted]' }
+  });
+  return res.status(500).json({ error: 'Misrouted: catch-all hit after expected handlers' });
 });
 
 // Proxy endpoint for HighLevel API calls
