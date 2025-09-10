@@ -1250,6 +1250,26 @@ process.on('SIGTERM', () => {
   });
 });
 
+// Force database initialization endpoint
+app.get('/admin/init-db', async (req, res) => {
+  try {
+    logger.info('🔧 Database initialization requested via endpoint...');
+    await initializeDatabase();
+    res.json({ 
+      status: 'success', 
+      message: 'Database initialized successfully',
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    logger.error('Database initialization failed via endpoint:', error);
+    res.status(500).json({ 
+      status: 'error', 
+      message: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 // Initialize database and start server
 (async () => {
   try {
