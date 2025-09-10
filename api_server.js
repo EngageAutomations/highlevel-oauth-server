@@ -2,7 +2,7 @@
 
 /**
  * ============================================================
- * HighLevel OAuth Integration - API Server
+ *  OAuth Integration - API Server
  * ============================================================
  * 
  * This server handles:
@@ -28,7 +28,7 @@
  * ============================================================
  */
 
-const express = require('express');
+ express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');

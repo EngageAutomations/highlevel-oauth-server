@@ -1,6 +1,6 @@
 # HighLevel OAuth Integration - Railway Deployment Kit
 
-🚀 **Complete automation suite for deploying HighLevel OAuth integration on Railway with dual-server architecture**
+ **Complete automation suite for deploying HighLevel OAuth integration on Railway with dual-server architecture**
 
 ## 📋 Overview
 
