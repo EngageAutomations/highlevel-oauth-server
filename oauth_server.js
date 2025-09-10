@@ -258,8 +258,13 @@ async function initializeDatabase() {
       logger.error('Database connection failed:', error);
       process.exit(1);
     } else {
-      logger.error('Failed to create OAuth tables:', error);
-      // Don\'t exit - tables might already exist
+      logger.error('Failed to create OAuth tables:', {
+        error: error.message,
+        stack: error.stack,
+        code: error.code
+      });
+      // Don\'t exit - but this is a serious issue
+      throw error;
     }
   }
 }
