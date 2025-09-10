@@ -1009,21 +1009,17 @@ if (ff('OAUTH_CALLBACK_V2')) {
           params.set('code', code);
           params.set('redirect_uri', config.redirectUri);
           
-          // Only set user_type if it's a valid enum value (lowercase)
-          if (type === 'location' || type === 'company') {
-            params.set('user_type', type);
-          }
+          // REMOVED: user_type parameter - HighLevel API no longer accepts it
+          // HighLevel now determines user type automatically from the authorization code
+          
           return params;
         };
 
         let tokens;
-        let attempted = [];
         
-        const attemptTokenExchange = async (ut) => {
-          attempted.push(ut);
-          const formData = createTokenForm(ut);
+        const attemptTokenExchange = async () => {
+          const formData = createTokenForm();
           console.log('TOKEN EXCHANGE ATTEMPT:', {
-            user_type: ut,
             form_params: Object.fromEntries(formData.entries()),
             endpoint: `${config.hlApiBase}/oauth/token`
           });
@@ -1035,24 +1031,8 @@ if (ff('OAUTH_CALLBACK_V2')) {
         };
 
         try {
-          if (userType) {
-            // We have a hint, try it first
-            tokens = await attemptTokenExchange(userType);
-          } else {
-            // No tenant hint, try location first
-            try {
-              tokens = await attemptTokenExchange('location');
-              userType = 'location';
-            } catch (e1) {
-              const isInvalidGrant = (e1.response?.status === 400 || e1.response?.status === 401) && 
-                String(e1.response?.data?.error || e1.response?.data || '').includes('invalid_grant');
-              if (!isInvalidGrant) throw e1;
-              
-              // Try company
-              tokens = await attemptTokenExchange('company');
-              userType = 'company';
-            }
-          }
+          // Single token exchange attempt - HighLevel determines user type automatically
+          tokens = await attemptTokenExchange();
         } catch (err) {
           const status = err.response?.status || 500;
           const data = err.response?.data;
@@ -1061,7 +1041,6 @@ if (ff('OAUTH_CALLBACK_V2')) {
             data,
             sending: {
               endpoint: `${config.hlApiBase}/oauth/token`,
-              user_type: userType || attempted.join(','),
               redirect_uri: config.redirectUri,
             },
             had: {
