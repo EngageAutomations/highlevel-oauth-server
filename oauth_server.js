@@ -1009,9 +1009,10 @@ if (ff('OAUTH_CALLBACK_V2')) {
         const hasCompany = Boolean(company_id || agency_id);
         
         // Pick the correct user_type exactly as HighLevel expects (lowercase)
-        let userType = hasLocation ? 'location' : (hasCompany ? 'company' : undefined);
+        // If no tenant params provided, we'll try without user_type and let HL determine it
+        let userType = hasLocation ? 'location' : (hasCompany ? 'company' : null);
 
-        const createTokenForm = (type) => {
+        const createTokenForm = () => {
           const params = new URLSearchParams();
           params.set('client_id', config.hlClientId);
           params.set('client_secret', config.hlClientSecret);
@@ -1019,7 +1020,7 @@ if (ff('OAUTH_CALLBACK_V2')) {
           params.set('code', code);
           params.set('redirect_uri', config.redirectUri);
           
-          // Include user_type parameter - required for proper tenant identification
+          // Include user_type parameter only if we can determine it from callback params
           if (userType) {
             params.set('user_type', userType);  // <- DO NOT DELETE
           }
@@ -1027,12 +1028,14 @@ if (ff('OAUTH_CALLBACK_V2')) {
           return params;
         };
 
-        // Assert middleware to prevent regressions
+        // Assert middleware to prevent regressions - but allow missing user_type if no tenant params
         function assertUserType(formData) {
           const userTypeValue = formData.get('user_type');
-          if (!userTypeValue || !['location','company'].includes(userTypeValue)) {
+          // If we have tenant params, user_type must be valid
+          if (hadTenant && (!userTypeValue || !['location','company'].includes(userTypeValue))) {
             throw new Error('Token exchange missing valid user_type');
           }
+          // If no tenant params, allow missing user_type (HL will determine it)
         }
 
         let tokens;
