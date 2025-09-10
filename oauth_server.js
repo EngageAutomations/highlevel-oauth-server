@@ -214,64 +214,99 @@ const db = new Pool({
 
 // Initialize database and create tables
 async function initializeDatabase() {
-  try {
-    // Test database connection
-    await db.query('SELECT NOW()');
-    logger.info('Database connected successfully');
-    
-    // Create OAuth tables if they don't exist
-    logger.info('Creating OAuth tables if needed...');
-    
-    // Create oauth_state table
-    await db.query(`
-      CREATE TABLE IF NOT EXISTS oauth_state (
-        state        TEXT PRIMARY KEY,
-        client_id    TEXT NOT NULL,
-        redirect_uri TEXT NOT NULL,
-        created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        expires_at   TIMESTAMPTZ NOT NULL
-      );
-    `);
-    logger.info('✅ oauth_state table created/verified');
-    
-    // Create index for oauth_state
-    await db.query(`
-      CREATE INDEX IF NOT EXISTS idx_oauth_state_expires ON oauth_state(expires_at);
-    `);
-    logger.info('✅ oauth_state index created/verified');
-    
-    // Create oauth_used_codes table
-    await db.query(`
-      CREATE TABLE IF NOT EXISTS oauth_used_codes (
-        code        TEXT PRIMARY KEY,
-        created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        expires_at  TIMESTAMPTZ NOT NULL
-      );
-    `);
-    logger.info('✅ oauth_used_codes table created/verified');
-    
-    // Create index for oauth_used_codes
-    await db.query(`
-      CREATE INDEX IF NOT EXISTS idx_oauth_used_codes_expires ON oauth_used_codes(expires_at);
-    `);
-    logger.info('✅ oauth_used_codes index created/verified');
-    
-    logger.info('✅ All OAuth tables ready');
-  } catch (error) {
-    if (error.message.includes('connection')) {
-      logger.error('Database connection failed:', error);
-      process.exit(1);
-    } else {
-      logger.error('Failed to create OAuth tables:', {
-        error: error.message,
-        stack: error.stack,
+  let retryCount = 0;
+  const maxRetries = 5;
+  const retryDelay = 2000; // 2 seconds
+  
+  while (retryCount < maxRetries) {
+    try {
+      logger.info(`🔧 Starting database initialization (attempt ${retryCount + 1}/${maxRetries})...`);
+      
+      // Test database connection
+      await db.query('SELECT NOW()');
+      logger.info('✅ Database connection successful');
+      
+      // Create oauth_state table
+      logger.info('Creating oauth_state table...');
+      await db.query(`
+        CREATE TABLE IF NOT EXISTS oauth_state (
+          state        TEXT PRIMARY KEY,
+          client_id    TEXT NOT NULL,
+          redirect_uri TEXT NOT NULL,
+          created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          expires_at   TIMESTAMPTZ NOT NULL
+        );
+      `);
+      logger.info('✅ oauth_state table created/verified');
+      
+      // Create index for oauth_state
+      logger.info('Creating oauth_state index...');
+      await db.query(`
+        CREATE INDEX IF NOT EXISTS idx_oauth_state_expires ON oauth_state(expires_at);
+      `);
+      logger.info('✅ oauth_state index created/verified');
+      
+      // Create oauth_used_codes table
+      logger.info('Creating oauth_used_codes table...');
+      await db.query(`
+        CREATE TABLE IF NOT EXISTS oauth_used_codes (
+          code        TEXT PRIMARY KEY,
+          created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          expires_at  TIMESTAMPTZ NOT NULL
+        );
+      `);
+      logger.info('✅ oauth_used_codes table created/verified');
+      
+      // Create index for oauth_used_codes
+      logger.info('Creating oauth_used_codes index...');
+      await db.query(`
+        CREATE INDEX IF NOT EXISTS idx_oauth_used_codes_expires ON oauth_used_codes(expires_at);
+      `);
+      logger.info('✅ oauth_used_codes index created/verified');
+      
+      // Verify tables exist
+      const result = await db.query(`
+        SELECT table_name FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name IN ('oauth_state', 'oauth_used_codes')
+        ORDER BY table_name;
+      `);
+      
+      const tables = result.rows.map(r => r.table_name);
+      logger.info('📋 Verified tables exist:', tables);
+      
+      if (tables.length === 2) {
+        logger.info('🎉 Database initialization completed successfully!');
+        return; // Success, exit the retry loop
+      } else {
+        throw new Error(`Expected 2 tables, found ${tables.length}: ${tables.join(', ')}`);
+      }
+      
+    } catch (error) {
+      retryCount++;
+      logger.error(`❌ Database initialization failed (attempt ${retryCount}/${maxRetries}):`, {
+        message: error.message,
         code: error.code,
-        sqlState: error.code,
+        sqlState: error.sqlState,
         detail: error.detail,
         hint: error.hint
       });
-      // Don\'t exit - but this is a serious issue
-      throw error;
+      
+      if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
+        logger.error('💥 Cannot connect to database.');
+        if (retryCount >= maxRetries) {
+          logger.error('💥 Max retries reached. Exiting...');
+          process.exit(1);
+        }
+      } else if (retryCount >= maxRetries) {
+        logger.error('💥 Max retries reached for table creation. Starting server anyway...');
+        return; // Don't exit, let server start
+      }
+      
+      if (retryCount < maxRetries) {
+        logger.info(`⏳ Retrying in ${retryDelay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
+      }
     }
   }
 }
