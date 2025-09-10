@@ -5,6 +5,8 @@
  * HighLevel OAuth Integration - OAuth Server
  * ============================================================
  * 
+ * Updated: Force redeploy with environment variables
+ * 
  * This server handles:
  * - HighLevel Marketplace OAuth installations
  * - Token exchange and secure storage
