@@ -212,16 +212,14 @@ const db = new Pool({
   connectionTimeoutMillis: 2000,
 });
 
-// Test database connection and create tables
-db.query('SELECT NOW()', async (err, result) => {
-  if (err) {
-    logger.error('Database connection failed:', err);
-    process.exit(1);
-  }
-  logger.info('Database connected successfully');
-  
-  // Create OAuth tables if they don't exist
+// Initialize database and create tables
+async function initializeDatabase() {
   try {
+    // Test database connection
+    await db.query('SELECT NOW()');
+    logger.info('Database connected successfully');
+    
+    // Create OAuth tables if they don't exist
     logger.info('Creating OAuth tables if needed...');
     
     // Create oauth_state table
@@ -255,11 +253,19 @@ db.query('SELECT NOW()', async (err, result) => {
     `);
     
     logger.info('✅ OAuth tables ready');
-  } catch (tableError) {
-    logger.error('Failed to create OAuth tables:', tableError);
-    // Don\'t exit - tables might already exist
+  } catch (error) {
+    if (error.message.includes('connection')) {
+      logger.error('Database connection failed:', error);
+      process.exit(1);
+    } else {
+      logger.error('Failed to create OAuth tables:', error);
+      // Don\'t exit - tables might already exist
+    }
   }
-});
+}
+
+// Initialize database on startup
+initializeDatabase();
 
 // Encryption utilities
 class TokenEncryption {
