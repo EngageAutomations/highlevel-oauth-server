@@ -897,7 +897,16 @@ app.get('/oauth/start', async (req, res) => {
        logger.info('OAuth state created with legacy in-memory storage', { state: state.substring(0, 8) + '...' });
      }
     
-     res.json({ authorize_url: auth.toString() });
+     // If caller asks for JSON (e.g., your CLI/tests), honor it; else 302 for browsers/Marketplace
+     const wantsJson = 
+       (req.get('accept') || '').includes('application/json') || 
+       'json' in req.query;
+
+     if (wantsJson) {
+       return res.json({ authorize_url: auth.toString(), state });
+     } else {
+       return res.redirect(302, auth.toString());
+     }
    } catch (error) {
      logger.error('Error in /oauth/start endpoint', { error: error.message, stack: error.stack });
      res.status(500).json({ error: 'Internal server error' });
