@@ -1007,11 +1007,18 @@ if (ff('OAUTH_CALLBACK_V2')) {
         const locIdHint = location_id || null;
         const agIdHint = company_id || agency_id || null;
         
-        // Build a preferred order to try
+        // Build a preferred order to try - include both old and new API formats
         let tryOrder = [];
-        if (locIdHint) tryOrder = ['location', 'company'];
-        else if (agIdHint) tryOrder = ['company', 'location'];
-        else tryOrder = ['location', 'company']; // no hints; try both
+        if (locIdHint) {
+          // Try location-based types first
+          tryOrder = ['location', 'Location', 'company', 'Company', 'Agency'];
+        } else if (agIdHint) {
+          // Try agency/company-based types first
+          tryOrder = ['company', 'Company', 'Agency', 'location', 'Location'];
+        } else {
+          // No hints; try all possible values starting with most common
+          tryOrder = ['location', 'Location', 'company', 'Company', 'Agency'];
+        }
 
         // Token exchange with fallback
         async function postToken(userType) {
