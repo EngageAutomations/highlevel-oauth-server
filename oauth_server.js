@@ -1096,7 +1096,26 @@ app.post('/admin/create-tables', async (req, res) => {
   }
 });
 
-
+// Constraint fix endpoint (admin only)
+app.post('/admin/fix-constraints', async (req, res) => {
+  try {
+    logger.info('🔧 Manual constraint fix requested...');
+    const { fixConstraintIssues } = require('./fix_constraint_final.js');
+    await fixConstraintIssues();
+    res.json({ 
+      success: true, 
+      message: 'Constraint fix completed successfully',
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    logger.error('❌ Constraint fix failed:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
 
 // Version endpoint (no auth)
 app.get('/version', (req, res) => {
