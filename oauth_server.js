@@ -729,6 +729,10 @@ class InstallationDB {
       }
       const expiresAt = new Date(Date.now() + (validExpiresIn * 1000));
       
+      // Extract client info from request
+      const installIp = req?.ip || req?.connection?.remoteAddress || null;
+      const userAgent = req?.get?.('User-Agent') || req?.headers?.['user-agent'] || null;
+      
       // Insert or update installation using manual upsert
       let result;
       
