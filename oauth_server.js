@@ -708,6 +708,16 @@ class InstallationDB {
     try {
       await client.query('BEGIN');
       
+      // Enhanced error logging for constraint debugging
+      logger.info('🔍 saveInstallation called', {
+        locationId,
+        agencyId,
+        hasTokens: !!tokens,
+        scopesCount: scopes?.length,
+        method: 'manual_upsert_v2',
+        timestamp: new Date().toISOString()
+      });
+      
       // Encrypt tokens
       const encryptedAccessToken = tokenEncryption.encrypt(tokens.access_token);
       const encryptedRefreshToken = tokenEncryption.encrypt(tokens.refresh_token);
@@ -834,6 +844,34 @@ class InstallationDB {
       
     } catch (error) {
       await client.query('ROLLBACK');
+      
+      // Enhanced constraint error logging
+      logger.error('❌ CONSTRAINT ERROR in saveInstallation:', {
+        errorMessage: error.message,
+        errorCode: error.code,
+        errorDetail: error.detail,
+        errorHint: error.hint,
+        errorPosition: error.position,
+        errorFile: error.file,
+        errorLine: error.line,
+        errorRoutine: error.routine,
+        locationId,
+        agencyId,
+        stackTrace: error.stack,
+        method: 'manual_upsert_v2',
+        timestamp: new Date().toISOString()
+      });
+      
+      // Check if this is the specific ON CONFLICT error
+      if (error.code === '42P10') {
+        logger.error('🚨 DETECTED 42P10 ERROR - ON CONFLICT constraint issue:', {
+          message: 'This should not happen with manual upsert logic!',
+          possibleCause: 'Old code version still running or cached',
+          errorCode: error.code,
+          errorMessage: error.message
+        });
+      }
+      
       throw error;
     } finally {
       client.release();
