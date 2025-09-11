@@ -304,6 +304,36 @@ async function initializeDatabase() {
       // Migration: Fix existing table schema if needed
       logger.info('Checking and migrating hl_installations schema...');
       try {
+        // Add missing columns first
+        logger.info('🔧 Adding missing columns to hl_installations...');
+        
+        await db.query(`
+          ALTER TABLE hl_installations 
+          ADD COLUMN IF NOT EXISTS installation_type TEXT DEFAULT 'location';
+        `);
+        
+        await db.query(`
+          ALTER TABLE hl_installations 
+          ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'active';
+        `);
+        
+        await db.query(`
+          ALTER TABLE hl_installations 
+          ADD COLUMN IF NOT EXISTS install_ip INET;
+        `);
+        
+        await db.query(`
+          ALTER TABLE hl_installations 
+          ADD COLUMN IF NOT EXISTS user_agent TEXT;
+        `);
+        
+        await db.query(`
+          ALTER TABLE hl_installations 
+          ADD COLUMN IF NOT EXISTS last_token_refresh TIMESTAMPTZ DEFAULT now();
+        `);
+        
+        logger.info('✅ Missing columns added successfully');
+        
         // Check if location_id has NOT NULL constraint
         const constraintCheck = await db.query(`
           SELECT column_name, is_nullable 
