@@ -719,61 +719,104 @@ class InstallationDB {
       }
       const expiresAt = new Date(Date.now() + (validExpiresIn * 1000));
       
-      // Insert or update installation
+      // Insert or update installation using manual upsert
       let result;
+      
       if (locationId) {
-        // Location-based installation
-        result = await client.query(
-          `INSERT INTO hl_installations 
-           (location_id, agency_id, access_token, refresh_token, scopes, expires_at, install_ip, user_agent)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-           ON CONFLICT (location_id) DO UPDATE SET
-             access_token = EXCLUDED.access_token,
-             refresh_token = EXCLUDED.refresh_token,
-             scopes = EXCLUDED.scopes,
-             expires_at = EXCLUDED.expires_at,
-             updated_at = NOW(),
-             last_token_refresh = NOW(),
-             status = 'active'
-           RETURNING id`,
-          [
-            locationId,
-            agencyId,
-            encryptedAccessToken,
-            encryptedRefreshToken,
-            scopes,
-            expiresAt,
-            installIp,
-            userAgent
-          ]
+        // Location-based installation - check if exists first
+        const existing = await client.query(
+          'SELECT id FROM hl_installations WHERE location_id = $1',
+          [locationId]
         );
+        
+        if (existing.rows.length > 0) {
+          // Update existing
+          result = await client.query(
+            `UPDATE hl_installations SET
+               access_token = $2,
+               refresh_token = $3,
+               scopes = $4,
+               expires_at = $5,
+               updated_at = NOW(),
+               last_token_refresh = NOW(),
+               status = 'active'
+             WHERE location_id = $1
+             RETURNING id`,
+            [
+              locationId,
+              encryptedAccessToken,
+              encryptedRefreshToken,
+              scopes,
+              expiresAt
+            ]
+          );
+        } else {
+          // Insert new
+          result = await client.query(
+            `INSERT INTO hl_installations 
+             (location_id, agency_id, access_token, refresh_token, scopes, expires_at, install_ip, user_agent)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+             RETURNING id`,
+            [
+              locationId,
+              agencyId,
+              encryptedAccessToken,
+              encryptedRefreshToken,
+              scopes,
+              expiresAt,
+              installIp,
+              userAgent
+            ]
+          );
+        }
       } else {
-        // Agency-based installation
-        result = await client.query(
-          `INSERT INTO hl_installations 
-           (location_id, agency_id, access_token, refresh_token, scopes, expires_at, install_ip, user_agent)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-           ON CONFLICT (agency_id) DO UPDATE SET
-             access_token = EXCLUDED.access_token,
-             refresh_token = EXCLUDED.refresh_token,
-             scopes = EXCLUDED.scopes,
-             expires_at = EXCLUDED.expires_at,
-             updated_at = NOW(),
-             last_token_refresh = NOW(),
-             status = 'active'
-           RETURNING id`,
-          [
-            locationId,
-            agencyId,
-            encryptedAccessToken,
-            encryptedRefreshToken,
-            scopes,
-            expiresAt,
-            installIp,
-            userAgent
-          ]
+        // Agency-based installation - check if exists first
+        const existing = await client.query(
+          'SELECT id FROM hl_installations WHERE agency_id = $1',
+          [agencyId]
         );
-       }
+        
+        if (existing.rows.length > 0) {
+          // Update existing
+          result = await client.query(
+            `UPDATE hl_installations SET
+               access_token = $2,
+               refresh_token = $3,
+               scopes = $4,
+               expires_at = $5,
+               updated_at = NOW(),
+               last_token_refresh = NOW(),
+               status = 'active'
+             WHERE agency_id = $1
+             RETURNING id`,
+            [
+              agencyId,
+              encryptedAccessToken,
+              encryptedRefreshToken,
+              scopes,
+              expiresAt
+            ]
+          );
+        } else {
+          // Insert new
+          result = await client.query(
+            `INSERT INTO hl_installations 
+             (location_id, agency_id, access_token, refresh_token, scopes, expires_at, install_ip, user_agent)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+             RETURNING id`,
+            [
+              locationId,
+              agencyId,
+              encryptedAccessToken,
+              encryptedRefreshToken,
+              scopes,
+              expiresAt,
+              installIp,
+              userAgent
+            ]
+          );
+        }
+      }
       
       const installationId = result.rows[0].id;
       
