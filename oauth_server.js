@@ -390,17 +390,25 @@ async function initializeDatabase() {
           DROP CONSTRAINT IF EXISTS unique_agency_install;
         `);
         
-        // Create partial unique indexes (PostgreSQL doesn't allow unique constraints with NULLs)
+        // Create regular unique constraints (will work with ON CONFLICT)
         await db.query(`
-          CREATE UNIQUE INDEX IF NOT EXISTS unique_location_install 
-          ON hl_installations (location_id) 
-          WHERE location_id IS NOT NULL;
+          ALTER TABLE hl_installations 
+          DROP CONSTRAINT IF EXISTS unique_location_install;
         `);
         
         await db.query(`
-          CREATE UNIQUE INDEX IF NOT EXISTS unique_agency_install 
-          ON hl_installations (agency_id) 
-          WHERE agency_id IS NOT NULL;
+          ALTER TABLE hl_installations 
+          DROP CONSTRAINT IF EXISTS unique_agency_install;
+        `);
+        
+        await db.query(`
+          ALTER TABLE hl_installations 
+          ADD CONSTRAINT unique_location_install UNIQUE (location_id);
+        `);
+        
+        await db.query(`
+          ALTER TABLE hl_installations 
+          ADD CONSTRAINT unique_agency_install UNIQUE (agency_id);
         `);
         
         logger.info('✅ Schema migration completed successfully');
@@ -715,7 +723,7 @@ class InstallationDB {
           `INSERT INTO hl_installations 
            (location_id, agency_id, access_token, refresh_token, scopes, expires_at, install_ip, user_agent)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-           ON CONFLICT (location_id) WHERE location_id IS NOT NULL DO UPDATE SET
+           ON CONFLICT (location_id) DO UPDATE SET
              access_token = EXCLUDED.access_token,
              refresh_token = EXCLUDED.refresh_token,
              scopes = EXCLUDED.scopes,
@@ -741,7 +749,7 @@ class InstallationDB {
           `INSERT INTO hl_installations 
            (location_id, agency_id, access_token, refresh_token, scopes, expires_at, install_ip, user_agent)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-           ON CONFLICT (agency_id) WHERE agency_id IS NOT NULL DO UPDATE SET
+           ON CONFLICT (agency_id) DO UPDATE SET
              access_token = EXCLUDED.access_token,
              refresh_token = EXCLUDED.refresh_token,
              scopes = EXCLUDED.scopes,
