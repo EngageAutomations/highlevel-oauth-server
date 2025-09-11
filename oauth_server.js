@@ -715,7 +715,7 @@ class InstallationDB {
           `INSERT INTO hl_installations 
            (location_id, agency_id, access_token, refresh_token, scopes, expires_at, install_ip, user_agent)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-           ON CONFLICT (location_id) DO UPDATE SET
+           ON CONFLICT (location_id) WHERE location_id IS NOT NULL DO UPDATE SET
              access_token = EXCLUDED.access_token,
              refresh_token = EXCLUDED.refresh_token,
              scopes = EXCLUDED.scopes,
@@ -741,7 +741,7 @@ class InstallationDB {
           `INSERT INTO hl_installations 
            (location_id, agency_id, access_token, refresh_token, scopes, expires_at, install_ip, user_agent)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-           ON CONFLICT (agency_id) DO UPDATE SET
+           ON CONFLICT (agency_id) WHERE agency_id IS NOT NULL DO UPDATE SET
              access_token = EXCLUDED.access_token,
              refresh_token = EXCLUDED.refresh_token,
              scopes = EXCLUDED.scopes,
