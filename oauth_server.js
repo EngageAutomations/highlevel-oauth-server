@@ -277,19 +277,26 @@ async function initializeDatabase() {
       logger.info('Creating hl_installations table...');
       await db.query(`
         CREATE TABLE IF NOT EXISTS hl_installations (
-          id                SERIAL PRIMARY KEY,
-          location_id       TEXT UNIQUE NOT NULL,
+          id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          location_id       TEXT,
           agency_id         TEXT,
           access_token      TEXT NOT NULL,
           refresh_token     TEXT NOT NULL,
-          scopes            TEXT[] NOT NULL,
+          scopes            TEXT[] NOT NULL DEFAULT '{}',
           expires_at        TIMESTAMPTZ NOT NULL,
-          created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-          updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-          last_token_refresh TIMESTAMPTZ,
-          status            TEXT NOT NULL DEFAULT 'active',
+          installation_type TEXT DEFAULT 'location' CHECK (installation_type IN ('location', 'agency')),
+          status            TEXT DEFAULT 'active' CHECK (status IN ('active', 'revoked', 'expired', 'error')),
+          created_at        TIMESTAMPTZ DEFAULT now(),
+          updated_at        TIMESTAMPTZ DEFAULT now(),
+          last_token_refresh TIMESTAMPTZ DEFAULT now(),
           install_ip        INET,
-          user_agent        TEXT
+          user_agent        TEXT,
+          CONSTRAINT unique_location_install UNIQUE (location_id),
+          CONSTRAINT unique_agency_install UNIQUE (agency_id),
+          CONSTRAINT require_tenant_id CHECK (
+            (location_id IS NOT NULL AND agency_id IS NULL) OR 
+            (location_id IS NULL AND agency_id IS NOT NULL)
+          )
         );
       `);
       logger.info('✅ hl_installations table created/verified');
