@@ -378,11 +378,15 @@ class TokenEncryption {
     if (this.key.length < 32) {
       throw new Error('Encryption key must be at least 32 bytes');
     }
+    // AES-256-CBC requires exactly 32 bytes
+    if (this.key.length > 32) {
+      this.key = this.key.slice(0, 32);
+    }
   }
   
   encrypt(text) {
     const iv = crypto.randomBytes(16);
-    const cipher = crypto.createCipher('aes-256-cbc', this.key);
+    const cipher = crypto.createCipheriv('aes-256-cbc', this.key, iv);
     cipher.setAutoPadding(true);
     
     let encrypted = cipher.update(text, 'utf8', 'hex');
@@ -400,7 +404,7 @@ class TokenEncryption {
     const iv = Buffer.from(parts[0], 'hex');
     const encrypted = parts[1];
     
-    const decipher = crypto.createDecipher('aes-256-cbc', this.key);
+    const decipher = crypto.createDecipheriv('aes-256-cbc', this.key, iv);
     decipher.setAutoPadding(true);
     
     let decrypted = decipher.update(encrypted, 'hex', 'utf8');
@@ -580,8 +584,12 @@ class InstallationDB {
       const encryptedAccessToken = tokenEncryption.encrypt(tokens.access_token);
       const encryptedRefreshToken = tokenEncryption.encrypt(tokens.refresh_token);
       
-      // Calculate expiry time
-      const expiresAt = new Date(Date.now() + (tokens.expires_in * 1000));
+      // Calculate expiry time with validation
+      const validExpiresIn = tokens.expires_in && !isNaN(tokens.expires_in) ? tokens.expires_in : 3600;
+      if (!tokens.expires_in || isNaN(tokens.expires_in)) {
+        console.warn('Invalid expires_in in saveInstallation, using 3600 seconds default');
+      }
+      const expiresAt = new Date(Date.now() + (validExpiresIn * 1000));
       
       // Insert or update installation
       const result = await client.query(
@@ -659,6 +667,13 @@ class InstallationDB {
   static async updateTokens(installationId, tokens) {
     const encryptedAccessToken = tokenEncryption.encrypt(tokens.access_token);
     const encryptedRefreshToken = tokenEncryption.encrypt(tokens.refresh_token);
+    
+    // Validate and fix expires_in field
+    if (!tokens.expires_in || isNaN(tokens.expires_in)) {
+      console.warn('Invalid or missing expires_in in updateTokens, defaulting to 3600 seconds');
+      tokens.expires_in = 3600;
+    }
+    
     const expiresAt = new Date(Date.now() + (tokens.expires_in * 1000));
     
     await db.query(
@@ -1007,17 +1022,17 @@ if (ff('OAUTH_CALLBACK_V2')) {
         const locIdHint = location_id || null;
         const agIdHint = company_id || agency_id || null;
         
-        // Build a preferred order to try - include both old and new API formats
+        // Build a preferred order to try - use HighLevel's correct user_type values
         let tryOrder = [];
         if (locIdHint) {
-          // Try location-based types first
-          tryOrder = ['location', 'Location', 'company', 'Company', 'Agency'];
+          // Try location-based types first (HighLevel uses 'Location' for locations)
+          tryOrder = ['Location', 'Agency'];
         } else if (agIdHint) {
-          // Try agency/company-based types first
-          tryOrder = ['company', 'Company', 'Agency', 'location', 'Location'];
+          // Try agency-based types first (HighLevel uses 'Agency' for agencies/companies)
+          tryOrder = ['Agency', 'Location'];
         } else {
           // No hints; try all possible values starting with most common
-          tryOrder = ['location', 'Location', 'company', 'Company', 'Agency'];
+          tryOrder = ['Location', 'Agency'];
         }
 
         // Token exchange with fallback
@@ -1067,6 +1082,16 @@ if (ff('OAUTH_CALLBACK_V2')) {
           // Token exchange with fallback mechanism
           tokens = await exchangeCodeWithFallback();
           console.log(`Token exchange succeeded with tryOrder: ${tryOrder}`);
+          
+          // LOG THE ACTUAL TOKEN RESPONSE TO SEE WHAT FIELDS ARE AVAILABLE
+          console.log('FULL TOKEN RESPONSE:', JSON.stringify(tokens, null, 2));
+          
+          // Validate and fix expires_in field
+          if (!tokens.expires_in || isNaN(tokens.expires_in)) {
+            console.warn('Invalid or missing expires_in, defaulting to 3600 seconds (1 hour)');
+            tokens.expires_in = 3600; // Default to 1 hour
+          }
+          
         } catch (err) {
           const status = err.response?.status || 500;
           const data = err.response?.data;
@@ -1087,11 +1112,24 @@ if (ff('OAUTH_CALLBACK_V2')) {
         markUsed(code);
       const scopes = tokens.scope ? tokens.scope.split(' ') : [];
 
-      // After we have tokens, discover tenant via enhanced introspection
-      let finalLocationId = locIdHint;
-      let finalAgencyId = agIdHint;
+      // After we have tokens, first check if tenant info is in the token response
+      let finalLocationId = locIdHint || tokens.locationId || tokens.location_id;
+      let finalAgencyId = agIdHint || tokens.companyId || tokens.company_id || tokens.agencyId || tokens.agency_id;
       
-      // If we don't have tenant info from URL params, use enhanced introspection
+      console.log('TENANT INFO CHECK:', {
+        fromUrlParams: { locIdHint, agIdHint },
+        fromTokens: { 
+          locationId: tokens.locationId, 
+          location_id: tokens.location_id,
+          companyId: tokens.companyId,
+          company_id: tokens.company_id,
+          agencyId: tokens.agencyId,
+          agency_id: tokens.agency_id
+        },
+        final: { finalLocationId, finalAgencyId }
+      });
+      
+      // If we still don't have tenant info, use enhanced introspection as fallback
       if (!finalLocationId && !finalAgencyId) {
         try {
           const { enhancedTenantIntrospection } = require('./fix_tenant_introspection');
@@ -1118,6 +1156,25 @@ if (ff('OAUTH_CALLBACK_V2')) {
         }
       }
        
+      // Validate that we have at least one tenant identifier
+      if (!finalLocationId && !finalAgencyId) {
+        logger.error('OAuth callback failed: No tenant identifier found', {
+          fromUrlParams: { locIdHint, agIdHint },
+          fromTokens: { 
+            locationId: tokens.locationId, 
+            location_id: tokens.location_id,
+            companyId: tokens.companyId,
+            company_id: tokens.company_id,
+            agencyId: tokens.agencyId,
+            agency_id: tokens.agency_id
+          }
+        });
+        return res.status(400).json({
+          error: 'OAuth callback failed',
+          detail: 'Unable to determine tenant identifier (location_id or agency_id) from OAuth response'
+        });
+      }
+       
        if (finalLocationId) {
          // Optional: fetch parent agency for future-proofing
          let parentAgencyId = finalAgencyId;
@@ -1141,7 +1198,7 @@ if (ff('OAUTH_CALLBACK_V2')) {
            refresh_token: tokens.refresh_token,
            expires_at: tokens.expires_at || new Date(Date.now() + 3600000).toISOString(),
            scopes: scopes.join(' ')
-         });
+         }, req);
          
          return res.status(200).send(`
            <html><head><title>Location Connected</title></head>
@@ -1162,7 +1219,7 @@ if (ff('OAUTH_CALLBACK_V2')) {
            refresh_token: tokens.refresh_token,
            expires_at: tokens.expires_at || new Date(Date.now() + 3600000).toISOString(),
            scopes: scopes.join(' ')
-         });
+         }, req);
          
          return res.status(200).send(`
            <html><head><title>Agency Connected</title></head>
@@ -1198,7 +1255,7 @@ if (ff('OAUTH_CALLBACK_V2')) {
   });
 
   // Helper function to save installation
-  async function saveInstallation(installData) {
+  async function saveInstallation(installData, req) {
     const { installation_scope, location_id, agency_id, access_token, refresh_token, expires_at, scopes } = installData;
     
     // Use existing InstallationDB.saveInstallation method
@@ -1207,20 +1264,12 @@ if (ff('OAUTH_CALLBACK_V2')) {
       agency_id,
       { access_token, refresh_token, expires_at, scope: scopes },
       scopes.split(' '),
-      { headers: { 'user-agent': 'OAuth-Server' } }
+      req
     );
   }
 } else {
   // Only register V1 when V2 is OFF (legacy behavior)
-  app.get('/oauth/callback', (req, res) => {
-    console.log('HANDLER: V1 legacy entered', { query: { ...req.query, code: '[redacted]' } });
-    const { code, location_id } = req.query;
-    if (!code || !location_id) {
-      return res.status(400).json({ error: 'Missing required parameters: code and location_id' });
-    }
-    // Legacy flow would go here - but we're keeping V2 enabled
-    return res.status(500).json({ error: 'V1 legacy handler should not be active' });
-  });
+  // V1 legacy handler removed - V2 handler at line 944 is the active implementation
 }
 
 // Ultimate catch-all to prove ordering
@@ -1278,9 +1327,12 @@ app.post('/proxy/hl', authenticateS2S, async (req, res) => {
         await InstallationDB.updateTokens(installation.id, newTokens);
         accessToken = newTokens.access_token;
         
+        // Validate expires_in for audit log
+        const validExpiresIn = newTokens.expires_in && !isNaN(newTokens.expires_in) ? newTokens.expires_in : 3600;
+        
         await auditLog(installation.id, 'token_refresh', {
           old_expires_at: installation.expires_at,
-          new_expires_at: new Date(Date.now() + (newTokens.expires_in * 1000))
+          new_expires_at: new Date(Date.now() + (validExpiresIn * 1000))
         }, req);
         
       } catch (refreshError) {
