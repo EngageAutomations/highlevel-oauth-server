@@ -370,17 +370,34 @@ async function initializeDatabase() {
           );
         `);
         
-        // Ensure unique constraints exist for both scenarios
+        // Drop existing partial indexes if they exist
         await db.query(`
-          CREATE UNIQUE INDEX IF NOT EXISTS hl_installations_location_id_unique 
-          ON hl_installations (location_id) 
-          WHERE location_id IS NOT NULL;
+          DROP INDEX IF EXISTS hl_installations_location_id_unique;
         `);
         
         await db.query(`
-          CREATE UNIQUE INDEX IF NOT EXISTS hl_installations_agency_id_unique 
-          ON hl_installations (agency_id) 
-          WHERE agency_id IS NOT NULL;
+          DROP INDEX IF EXISTS hl_installations_agency_id_unique;
+        `);
+        
+        // Add proper unique constraints (not partial indexes)
+        await db.query(`
+          ALTER TABLE hl_installations 
+          DROP CONSTRAINT IF EXISTS unique_location_install;
+        `);
+        
+        await db.query(`
+          ALTER TABLE hl_installations 
+          DROP CONSTRAINT IF EXISTS unique_agency_install;
+        `);
+        
+        await db.query(`
+          ALTER TABLE hl_installations 
+          ADD CONSTRAINT unique_location_install UNIQUE (location_id);
+        `);
+        
+        await db.query(`
+          ALTER TABLE hl_installations 
+          ADD CONSTRAINT unique_agency_install UNIQUE (agency_id);
         `);
         
         logger.info('✅ Schema migration completed successfully');
@@ -695,7 +712,7 @@ class InstallationDB {
           `INSERT INTO hl_installations 
            (location_id, agency_id, access_token, refresh_token, scopes, expires_at, install_ip, user_agent)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-           ON CONFLICT (location_id) DO UPDATE SET
+           ON CONFLICT ON CONSTRAINT unique_location_install DO UPDATE SET
              access_token = EXCLUDED.access_token,
              refresh_token = EXCLUDED.refresh_token,
              scopes = EXCLUDED.scopes,
@@ -721,7 +738,7 @@ class InstallationDB {
           `INSERT INTO hl_installations 
            (location_id, agency_id, access_token, refresh_token, scopes, expires_at, install_ip, user_agent)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-           ON CONFLICT (agency_id) DO UPDATE SET
+           ON CONFLICT ON CONSTRAINT unique_agency_install DO UPDATE SET
              access_token = EXCLUDED.access_token,
              refresh_token = EXCLUDED.refresh_token,
              scopes = EXCLUDED.scopes,
