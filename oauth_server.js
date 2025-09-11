@@ -1003,80 +1003,75 @@ if (ff('OAUTH_CALLBACK_V2')) {
         logger.info('Code marked as used (legacy)', { code: code.substring(0, 10) + '...' });
       }
 
-      // Robust approach: exchange code first, then introspect if tenant missing
-        const hadTenant = !!(location_id || company_id || agency_id);
-        const hasLocation = Boolean(location_id);
-        const hasCompany = Boolean(company_id || agency_id);
+      // Auto-detect user_type with fallback mechanism
+        const locIdHint = location_id || null;
+        const agIdHint = company_id || agency_id || null;
         
-        // Pick the correct user_type exactly as HighLevel expects (lowercase)
-        // If no tenant params provided, we'll try without user_type and let HL determine it
-        let userType = hasLocation ? 'location' : (hasCompany ? 'company' : null);
+        // Build a preferred order to try
+        let tryOrder = [];
+        if (locIdHint) tryOrder = ['location', 'company'];
+        else if (agIdHint) tryOrder = ['company', 'location'];
+        else tryOrder = ['location', 'company']; // no hints; try both
 
-        const createTokenForm = () => {
+        // Token exchange with fallback
+        async function postToken(userType) {
           const params = new URLSearchParams();
           params.set('client_id', config.hlClientId);
           params.set('client_secret', config.hlClientSecret);
           params.set('grant_type', 'authorization_code');
           params.set('code', code);
           params.set('redirect_uri', config.redirectUri);
-          
-          // Include user_type parameter only if we can determine it from callback params
-          if (userType) {
-            params.set('user_type', userType);  // <- DO NOT DELETE
-          }
-          
-          return params;
-        };
-
-        // Assert middleware to prevent regressions - but allow missing user_type if no tenant params
-        function assertUserType(formData) {
-          const userTypeValue = formData.get('user_type');
-          // If we have tenant params, user_type must be valid
-          if (hadTenant && (!userTypeValue || !['location','company'].includes(userTypeValue))) {
-            throw new Error('Token exchange missing valid user_type');
-          }
-          // If no tenant params, allow missing user_type (HL will determine it)
-        }
-
-        let tokens;
-        
-        const attemptTokenExchange = async () => {
-          const formData = createTokenForm();
-          
-          // Assert user_type is present before token exchange
-          assertUserType(formData);
+          params.set('user_type', userType);
           
           console.log('TOKEN EXCHANGE ATTEMPT:', {
-            form_params: Object.fromEntries(formData.entries()),
+            user_type: userType,
             endpoint: `${config.hlApiBase}/oauth/token`
           });
-          const response = await axios.post(`${config.hlApiBase}/oauth/token`, formData.toString(), {
+          
+          const response = await axios.post(`${config.hlApiBase}/oauth/token`, params.toString(), {
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
             timeout: 15000
           });
+          
           return response.data;
-        };
+        }
+        
+        async function exchangeCodeWithFallback() {
+          let lastErr;
+          for (const userType of tryOrder) {
+            try {
+              return await postToken(userType);
+            } catch (e) {
+              const status = e?.response?.status;
+              // If this looks like a user_type mismatch, try the other one
+              const likelyMismatch = status === 400 || status === 401;
+              if (!likelyMismatch) throw e;
+              lastErr = e;
+              console.log(`Token exchange failed for user_type=${userType}, trying next...`);
+            }
+          }
+          throw lastErr || new Error('Token exchange failed for all user types');
+        }
+
+        let tokens;
 
         try {
-          // Single token exchange attempt - HighLevel determines user type automatically
-          tokens = await attemptTokenExchange();
+          // Token exchange with fallback mechanism
+          tokens = await exchangeCodeWithFallback();
+          console.log(`Token exchange succeeded with tryOrder: ${tryOrder}`);
         } catch (err) {
           const status = err.response?.status || 500;
           const data = err.response?.data;
           console.error('TOKEN EXCHANGE ERROR', {
             status,
             data,
-            sending: {
-              endpoint: `${config.hlApiBase}/oauth/token`,
-              redirect_uri: config.redirectUri,
-            },
+            tryOrder,
             had: {
               location_id: !!location_id,
               company_id: !!company_id,
               agency_id: !!agency_id,
             }
           });
-          // Return the actual status code from HighLevel instead of always 500
           return res.status(status).json({ error: 'OAuth callback failed', detail: data || err.message });
         }
         
@@ -1084,92 +1079,110 @@ if (ff('OAUTH_CALLBACK_V2')) {
         markUsed(code);
       const scopes = tokens.scope ? tokens.scope.split(' ') : [];
 
-      // Discover tenant via /users/me introspection
-       let finalLocationId = location_id || null;
-       let finalAgencyId = company_id || agency_id || null;
+      // After we have tokens, discover tenant via /users/me
+       const me = await axios.get(`${config.hlApiBase}/users/me`, {
+         headers: { 
+           'Authorization': `Bearer ${tokens.access_token}`,
+           'Version': '2021-07-28'
+         },
+         timeout: 12000
+       }).then(r => r.data).catch(() => ({}));
        
-       if (!hadTenant || (!finalLocationId && !finalAgencyId)) {
+       const finalLocationId = locIdHint || me.locationId || me.location_id || null;
+       let finalAgencyId = agIdHint || me.companyId || me.agencyId || me.company_id || me.agency_id || null;
+       
+       if (finalLocationId) {
+         // Optional: fetch parent agency for future-proofing
+         let parentAgencyId = finalAgencyId;
          try {
-           const me = await axios.get(`${config.hlApiBase}/users/me`, {
-             headers: { 
-               Authorization: `Bearer ${tokens.access_token}`,
-               Version: '2021-07-28'
-             },
-             timeout: 15000
-           });
-           
-           // Prefer query params if present, else use introspected values
-           finalLocationId = finalLocationId || me.data?.locationId || null;
-           finalAgencyId = finalAgencyId || me.data?.companyId || me.data?.agencyId || null;
-         } catch (e) {
-           logger.warn('Tenant introspection failed:', e.response?.data || e.message);
-         }
-       }
-       
-       // Final check: if still no tenant after introspection
-       if (!finalLocationId && !finalAgencyId) {
-         return res.status(202).json({
-           error: 'Missing tenant identifier',
-           detail: 'Provider did not supply tenant info; please re-install and explicitly choose Agency or a Location.'
-         });
-       }
-
-       // Normalize dual storage: for location installs, fetch parent agency_id
-       let normalizedLocationId = finalLocationId;
-       let normalizedAgencyId = finalAgencyId;
-       
-       if (finalLocationId && !finalAgencyId) {
-         try {
-           // Fetch location details to get parent agency_id
-           const locationResponse = await axios.get(`${config.hlApiBase}/locations/${finalLocationId}`, {
+           const locMeta = await axios.get(`${config.hlApiBase}/locations/${finalLocationId}`, {
              headers: { 
                'Authorization': `Bearer ${tokens.access_token}`,
                'Version': '2021-07-28'
              },
-             timeout: 10000
-           });
-           
-           const parentAgencyId = locationResponse.data?.location?.companyId || locationResponse.data?.companyId;
-           if (parentAgencyId) {
-             normalizedAgencyId = parentAgencyId;
-             logger.info('Fetched parent agency for location install', {
-               locationId: finalLocationId,
-               parentAgencyId: parentAgencyId
-             });
-           }
-         } catch (err) {
-           logger.warn('Failed to fetch parent agency for location', {
-             locationId: finalLocationId,
-             error: err.response?.data || err.message
-           });
-           // Continue with installation even if parent agency fetch fails
-         }
+             timeout: 12000
+           }).then(r => r.data);
+           parentAgencyId = parentAgencyId || locMeta?.companyId || locMeta?.agencyId || null;
+         } catch {}
+         
+         // Store location installation
+         await saveInstallation({
+           installation_scope: 'location',
+           location_id: finalLocationId,
+           agency_id: parentAgencyId,
+           access_token: tokens.access_token,
+           refresh_token: tokens.refresh_token,
+           expires_at: tokens.expires_at || new Date(Date.now() + 3600000).toISOString(),
+           scopes: scopes.join(' ')
+         });
+         
+         return res.status(200).send(`
+           <html><head><title>Location Connected</title></head>
+           <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+             <h2>✅ Location Connected Successfully</h2>
+             <p>You can close this window.</p>
+             <script>setTimeout(() => window.close(), 2000);</script>
+           </body></html>
+         `);
        }
-
-      // Save installation with normalized tenant data (both IDs when possible)
-       const installationId = await InstallationDB.saveInstallation(
-         normalizedLocationId,
-         normalizedAgencyId,
-         tokens,
-         scopes,
-         req
-       );
-
-       logger.info('OAuth installation successful (V2)', {
-         installationId,
-         locationId: finalLocationId,
-         agencyId: finalAgencyId,
-         scopes,
-         hadTenant,
-         userType
+       
+       if (finalAgencyId) {
+         // Store agency installation
+         await saveInstallation({
+           installation_scope: 'agency',
+           agency_id: finalAgencyId,
+           access_token: tokens.access_token,
+           refresh_token: tokens.refresh_token,
+           expires_at: tokens.expires_at || new Date(Date.now() + 3600000).toISOString(),
+           scopes: scopes.join(' ')
+         });
+         
+         return res.status(200).send(`
+           <html><head><title>Agency Connected</title></head>
+           <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+             <h2>✅ Agency Connected Successfully</h2>
+             <p>You can close this window.</p>
+             <script>setTimeout(() => window.close(), 2000);</script>
+           </body></html>
+         `);
+       }
+       
+       // Still nothing? Clear, actionable error
+       return res.status(202).json({
+         error: 'Missing tenant identifier',
+         detail: 'OAuth succeeded but tenant could not be inferred. Please reinstall and select a Location or Agency.'
+       });
+       
+       logger.debug({ 
+         triedUserTypes: tryOrder, 
+         selected: tokens.user_type || 'unknown', 
+         meSeen: !!me?.id, 
+         loc: !!finalLocationId, 
+         ag: !!finalAgencyId 
        });
 
-      return res.send('✅ Connected (V2). You can close this window.');
-    } catch (err) {
-      logger.error('V2 callback handler error:', err);
-      return res.status(500).json({ error: 'OAuth callback failed', detail: err.message });
+    } catch (error) {
+      logger.error('OAuth callback error (V2):', error);
+      return res.status(500).json({
+        error: 'OAuth callback failed',
+        detail: error.message
+      });
     }
   });
+
+  // Helper function to save installation
+  async function saveInstallation(installData) {
+    const { installation_scope, location_id, agency_id, access_token, refresh_token, expires_at, scopes } = installData;
+    
+    // Use existing InstallationDB.saveInstallation method
+    return await InstallationDB.saveInstallation(
+      location_id,
+      agency_id,
+      { access_token, refresh_token, expires_at, scope: scopes },
+      scopes.split(' '),
+      { headers: { 'user-agent': 'OAuth-Server' } }
+    );
+  }
 } else {
   // Only register V1 when V2 is OFF (legacy behavior)
   app.get('/oauth/callback', (req, res) => {
