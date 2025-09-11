@@ -1087,17 +1087,36 @@ if (ff('OAUTH_CALLBACK_V2')) {
         markUsed(code);
       const scopes = tokens.scope ? tokens.scope.split(' ') : [];
 
-      // After we have tokens, discover tenant via /users/me
-       const me = await axios.get(`${config.hlApiBase}/users/me`, {
-         headers: { 
-           'Authorization': `Bearer ${tokens.access_token}`,
-           'Version': '2021-07-28'
-         },
-         timeout: 12000
-       }).then(r => r.data).catch(() => ({}));
-       
-       const finalLocationId = locIdHint || me.locationId || me.location_id || null;
-       let finalAgencyId = agIdHint || me.companyId || me.agencyId || me.company_id || me.agency_id || null;
+      // After we have tokens, discover tenant via enhanced introspection
+      let finalLocationId = locIdHint;
+      let finalAgencyId = agIdHint;
+      
+      // If we don't have tenant info from URL params, use enhanced introspection
+      if (!finalLocationId && !finalAgencyId) {
+        try {
+          const { enhancedTenantIntrospection } = require('./fix_tenant_introspection');
+          const discovered = await enhancedTenantIntrospection(tokens.access_token, config);
+          finalLocationId = discovered.locationId;
+          finalAgencyId = discovered.agencyId;
+          logger.info('Enhanced tenant introspection result:', { finalLocationId, finalAgencyId });
+        } catch (e) {
+          logger.warn('Enhanced tenant introspection failed:', e.message);
+          // Fallback to basic /users/me as last resort
+          try {
+            const me = await axios.get(`${config.hlApiBase}/users/me`, {
+              headers: { 
+                'Authorization': `Bearer ${tokens.access_token}`,
+                'Version': '2021-07-28'
+              },
+              timeout: 12000
+            }).then(r => r.data);
+            finalLocationId = me.locationId || me.location_id || null;
+            finalAgencyId = me.companyId || me.agencyId || me.company_id || me.agency_id || null;
+          } catch (fallbackError) {
+            logger.warn('Fallback /users/me also failed:', fallbackError.message);
+          }
+        }
+      }
        
        if (finalLocationId) {
          // Optional: fetch parent agency for future-proofing
