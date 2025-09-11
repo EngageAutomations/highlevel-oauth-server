@@ -328,6 +328,13 @@ async function initializeDatabase() {
             ALTER COLUMN location_id DROP NOT NULL;
           `);
           
+          // Recreate unique constraint on location_id (for non-null values)
+          await db.query(`
+            CREATE UNIQUE INDEX IF NOT EXISTS hl_installations_location_id_unique 
+            ON hl_installations (location_id) 
+            WHERE location_id IS NOT NULL;
+          `);
+          
           logger.info('✅ location_id migration completed');
         }
         
@@ -361,6 +368,19 @@ async function initializeDatabase() {
             (location_id IS NOT NULL AND agency_id IS NULL) OR 
             (location_id IS NULL AND agency_id IS NOT NULL)
           );
+        `);
+        
+        // Ensure unique constraints exist for both scenarios
+        await db.query(`
+          CREATE UNIQUE INDEX IF NOT EXISTS hl_installations_location_id_unique 
+          ON hl_installations (location_id) 
+          WHERE location_id IS NOT NULL;
+        `);
+        
+        await db.query(`
+          CREATE UNIQUE INDEX IF NOT EXISTS hl_installations_agency_id_unique 
+          ON hl_installations (agency_id) 
+          WHERE agency_id IS NOT NULL;
         `);
         
         logger.info('✅ Schema migration completed successfully');
