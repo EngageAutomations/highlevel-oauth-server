@@ -1051,10 +1051,11 @@ if (ff('OAUTH_CALLBACK_V2')) {
             } catch (e) {
               const status = e?.response?.status;
               // If this looks like a user_type mismatch, try the other one
-              const likelyMismatch = status === 400 || status === 401;
+              // 400: Bad Request, 401: Unauthorized, 422: Unprocessable Entity (invalid enum)
+              const likelyMismatch = status === 400 || status === 401 || status === 422;
               if (!likelyMismatch) throw e;
               lastErr = e;
-              console.log(`Token exchange failed for user_type=${userType}, trying next...`);
+              console.log(`Token exchange failed for user_type=${userType} (status ${status}), trying next...`);
             }
           }
           throw lastErr || new Error('Token exchange failed for all user types');
