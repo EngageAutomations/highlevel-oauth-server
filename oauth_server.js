@@ -411,6 +411,10 @@ async function initializeDatabase() {
           ADD CONSTRAINT unique_agency_install UNIQUE (agency_id);
         `);
         
+        // Run additional constraint fix to ensure proper setup
+        const { fixConstraintsOnRailway } = require('./fix_constraints_railway.js');
+        await fixConstraintsOnRailway();
+        
         logger.info('✅ Schema migration completed successfully');
         
       } catch (migrationError) {
