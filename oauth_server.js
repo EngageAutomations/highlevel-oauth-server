@@ -415,7 +415,7 @@ async function initializeDatabase() {
         const { fixConstraintsOnRailway } = require('./fix_constraints_railway.js');
         await fixConstraintsOnRailway();
         
-        logger.info('✅ Schema migration completed successfully');
+        logger.info('✅ Schema migration completed successfully - MANUAL UPSERT VERSION 2025-01-11');
         
       } catch (migrationError) {
         logger.error('⚠️ Schema migration failed:', migrationError.message);
