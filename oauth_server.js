@@ -301,6 +301,75 @@ async function initializeDatabase() {
       `);
       logger.info('✅ hl_installations table created/verified');
       
+      // Migration: Fix existing table schema if needed
+      logger.info('Checking and migrating hl_installations schema...');
+      try {
+        // Check if location_id has NOT NULL constraint
+        const constraintCheck = await db.query(`
+          SELECT column_name, is_nullable 
+          FROM information_schema.columns 
+          WHERE table_schema = 'public' 
+          AND table_name = 'hl_installations' 
+          AND column_name = 'location_id';
+        `);
+        
+        if (constraintCheck.rows.length > 0 && constraintCheck.rows[0].is_nullable === 'NO') {
+          logger.info('🔄 Migrating location_id to allow NULL values...');
+          
+          // Drop old unique constraint if exists
+          await db.query(`
+            ALTER TABLE hl_installations 
+            DROP CONSTRAINT IF EXISTS hl_installations_location_id_key;
+          `);
+          
+          // Remove NOT NULL constraint
+          await db.query(`
+            ALTER TABLE hl_installations 
+            ALTER COLUMN location_id DROP NOT NULL;
+          `);
+          
+          logger.info('✅ location_id migration completed');
+        }
+        
+        // Ensure agency_id column exists
+        const agencyIdCheck = await db.query(`
+          SELECT column_name 
+          FROM information_schema.columns 
+          WHERE table_schema = 'public' 
+          AND table_name = 'hl_installations' 
+          AND column_name = 'agency_id';
+        `);
+        
+        if (agencyIdCheck.rows.length === 0) {
+          logger.info('➕ Adding missing agency_id column...');
+          await db.query(`
+            ALTER TABLE hl_installations 
+            ADD COLUMN agency_id TEXT;
+          `);
+          logger.info('✅ agency_id column added');
+        }
+        
+        // Ensure proper constraints exist
+        await db.query(`
+          ALTER TABLE hl_installations 
+          DROP CONSTRAINT IF EXISTS require_tenant_id;
+        `);
+        
+        await db.query(`
+          ALTER TABLE hl_installations 
+          ADD CONSTRAINT require_tenant_id CHECK (
+            (location_id IS NOT NULL AND agency_id IS NULL) OR 
+            (location_id IS NULL AND agency_id IS NOT NULL)
+          );
+        `);
+        
+        logger.info('✅ Schema migration completed successfully');
+        
+      } catch (migrationError) {
+        logger.error('⚠️ Schema migration failed:', migrationError.message);
+        // Don't fail startup, just log the error
+      }
+      
       // Create indexes for hl_installations
       logger.info('Creating hl_installations indexes...');
       await db.query(`
