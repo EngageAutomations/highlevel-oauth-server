@@ -1481,11 +1481,11 @@ if (ff('OAUTH_CALLBACK_V2')) {
            parentAgencyId = parentAgencyId || locMeta?.companyId || locMeta?.agencyId || null;
          } catch {}
          
-         // Store location installation
+         // Store location installation (agency_id must be NULL per constraint)
          await saveInstallation({
            installation_scope: 'location',
            location_id: finalLocationId,
-           agency_id: parentAgencyId,
+           agency_id: null, // Must be NULL for location installs per require_tenant_id constraint
            access_token: tokens.access_token,
            refresh_token: tokens.refresh_token,
            expires_at: tokens.expires_at || new Date(Date.now() + 3600000).toISOString(),
@@ -1503,9 +1503,10 @@ if (ff('OAUTH_CALLBACK_V2')) {
        }
        
        if (finalAgencyId) {
-         // Store agency installation
+         // Store agency installation (location_id must be NULL per constraint)
          await saveInstallation({
            installation_scope: 'agency',
+           location_id: null, // Must be NULL for agency installs per require_tenant_id constraint
            agency_id: finalAgencyId,
            access_token: tokens.access_token,
            refresh_token: tokens.refresh_token,
