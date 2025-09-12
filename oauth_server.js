@@ -1024,6 +1024,9 @@ const ALLOWED_ENDPOINTS = [
   // Products and stores endpoints
   /^\/products/,
   /^\/stores/,
+  
+  // Media endpoints
+  /^\/medias/,
 ];
 
 function isEndpointAllowed(endpoint) {
@@ -2227,5 +2230,274 @@ setInterval(async () => {
     logger.error('Background token refresh job failed:', error);
   }
 }, 60 * 60 * 1000); // Every hour
+
+// ============================================================
+// Test Mode Endpoints - UI Accessible Location Management
+// ============================================================
+
+// Import test location manager functions
+const {
+  getLocationToken,
+  validateLocationScopes,
+  testLocationAPI,
+  setupTestMode,
+  analyzeLocationStatus
+} = require('./test_location_manager.js');
+
+/**
+ * Test Mode Dashboard - Simple HTML interface
+ */
+app.get('/test-mode', (req, res) => {
+  const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HighLevel Test Mode Dashboard</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        .container { background: #f5f5f5; padding: 20px; border-radius: 8px; margin: 10px 0; }
+        .success { background: #d4edda; border: 1px solid #c3e6cb; color: #155724; }
+        .error { background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; }
+        .warning { background: #fff3cd; border: 1px solid #ffeaa7; color: #856404; }
+        input, button { padding: 10px; margin: 5px; border: 1px solid #ddd; border-radius: 4px; }
+        button { background: #007bff; color: white; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        .result { margin-top: 20px; padding: 15px; border-radius: 4px; white-space: pre-wrap; }
+        .endpoint { background: #e9ecef; padding: 10px; margin: 10px 0; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <h1>🧪 HighLevel Test Mode Dashboard</h1>
+    
+    <div class="container">
+        <h2>📍 Location Setup</h2>
+        <p>Enter a location ID to set up test mode and validate API access:</p>
+        
+        <input type="text" id="locationId" placeholder="Enter Location ID (e.g., WAvk87RmW9rBSDJHeOpH)" style="width: 400px;">
+        <br>
+        <button onclick="analyzeLocation()">🔍 Analyze Location</button>
+        <button onclick="setupTestMode()">🧪 Setup Test Mode</button>
+        <button onclick="testAPI()">🚀 Test API</button>
+        <button onclick="refreshToken()">🔄 Refresh Token</button>
+    </div>
+    
+    <div class="container">
+        <h2>📋 Available Endpoints</h2>
+        <div class="endpoint">
+            <strong>GET /test-mode/analyze/:locationId</strong><br>
+            Analyze location status, scopes, and token validity
+        </div>
+        <div class="endpoint">
+            <strong>POST /test-mode/setup/:locationId</strong><br>
+            Set up test mode for a location with full validation
+        </div>
+        <div class="endpoint">
+            <strong>GET /test-mode/test/:locationId</strong><br>
+            Test API connectivity and permissions
+        </div>
+        <div class="endpoint">
+            <strong>POST /test-mode/refresh/:locationId</strong><br>
+            Force token refresh for a location
+        </div>
+    </div>
+    
+    <div id="result"></div>
+    
+    <script>
+        function getLocationId() {
+            const id = document.getElementById('locationId').value.trim();
+            if (!id) {
+                showResult('Please enter a location ID', 'error');
+                return null;
+            }
+            return id;
+        }
+        
+        function showResult(data, type = 'success') {
+            const result = document.getElementById('result');
+            result.className = 'result ' + type;
+            result.textContent = typeof data === 'object' ? JSON.stringify(data, null, 2) : data;
+        }
+        
+        async function analyzeLocation() {
+            const locationId = getLocationId();
+            if (!locationId) return;
+            
+            try {
+                showResult('Analyzing location...', 'warning');
+                const response = await fetch(`/test-mode/analyze/${locationId}`);
+                const data = await response.json();
+                showResult(data, response.ok ? 'success' : 'error');
+            } catch (error) {
+                showResult('Error: ' + error.message, 'error');
+            }
+        }
+        
+        async function setupTestMode() {
+            const locationId = getLocationId();
+            if (!locationId) return;
+            
+            try {
+                showResult('Setting up test mode...', 'warning');
+                const response = await fetch(`/test-mode/setup/${locationId}`, { method: 'POST' });
+                const data = await response.json();
+                showResult(data, response.ok ? 'success' : 'error');
+            } catch (error) {
+                showResult('Error: ' + error.message, 'error');
+            }
+        }
+        
+        async function testAPI() {
+            const locationId = getLocationId();
+            if (!locationId) return;
+            
+            try {
+                showResult('Testing API connectivity...', 'warning');
+                const response = await fetch(`/test-mode/test/${locationId}`);
+                const data = await response.json();
+                showResult(data, response.ok ? 'success' : 'error');
+            } catch (error) {
+                showResult('Error: ' + error.message, 'error');
+            }
+        }
+        
+        async function refreshToken() {
+            const locationId = getLocationId();
+            if (!locationId) return;
+            
+            try {
+                showResult('Refreshing token...', 'warning');
+                const response = await fetch(`/test-mode/refresh/${locationId}`, { method: 'POST' });
+                const data = await response.json();
+                showResult(data, response.ok ? 'success' : 'error');
+            } catch (error) {
+                showResult('Error: ' + error.message, 'error');
+            }
+        }
+    </script>
+</body>
+</html>`;
+  
+  res.send(html);
+});
+
+/**
+ * Analyze Location Status
+ */
+app.get('/test-mode/analyze/:locationId', async (req, res) => {
+  try {
+    const { locationId } = req.params;
+    const analysis = await analyzeLocationStatus(locationId);
+    
+    res.json({
+      success: true,
+      locationId,
+      analysis,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    logger.error('Location analysis failed:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+/**
+ * Setup Test Mode for Location
+ */
+app.post('/test-mode/setup/:locationId', async (req, res) => {
+  try {
+    const { locationId } = req.params;
+    const setup = await setupTestMode(locationId);
+    
+    res.json({
+      success: true,
+      locationId,
+      setup,
+      message: 'Test mode setup completed successfully',
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    logger.error('Test mode setup failed:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      locationId: req.params.locationId,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+/**
+ * Test API Connectivity
+ */
+app.get('/test-mode/test/:locationId', async (req, res) => {
+  try {
+    const { locationId } = req.params;
+    const testResults = await testLocationAPI(locationId);
+    
+    res.json({
+      success: true,
+      locationId,
+      testResults,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    logger.error('API test failed:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      locationId: req.params.locationId,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+/**
+ * Force Token Refresh
+ */
+app.post('/test-mode/refresh/:locationId', async (req, res) => {
+  try {
+    const { locationId } = req.params;
+    
+    // Get current installation
+    const installation = await InstallationDB.getInstallation(locationId, null);
+    if (!installation) {
+      return res.status(404).json({
+        success: false,
+        error: 'Location not found in installations',
+        locationId
+      });
+    }
+    
+    // Force refresh token
+    const newTokens = await HighLevelAPI.refreshToken(installation.refresh_token);
+    await InstallationDB.updateTokens(installation.id, newTokens);
+    
+    // Validate new token
+    const validation = await validateLocationScopes(locationId);
+    
+    res.json({
+      success: true,
+      locationId,
+      message: 'Token refreshed successfully',
+      validation,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    logger.error('Token refresh failed:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      locationId: req.params.locationId,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
 
 module.exports = app;
