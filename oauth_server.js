@@ -1499,20 +1499,56 @@ if (ff('OAUTH_CALLBACK_V2')) {
          }, req);
          
          return res.status(200).send(`
-           <html><head><title>Location Connected</title></head>
-           <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
-             <h2>✅ Installed Successfully</h2>
-             <p>This window will auto close.</p>
-             <script>
-               setTimeout(() => {
-                 try {
-                   window.close();
-                 } catch (e) {
-                   document.body.innerHTML = '<h2>✅ Installation Complete</h2><p>You can now close this window.</p>';
+           <html>
+           <head>
+             <title>Location Connected</title>
+             <style>
+               body {
+                 margin: 0;
+                 padding: 0;
+                 font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                 background: linear-gradient(135deg, #ff9a00 0%, #ffcd3c 100%);
+                 min-height: 100vh;
+                 display: flex;
+                 align-items: center;
+                 justify-content: center;
+               }
+               .card {
+                 background: white;
+                 padding: 40px 60px;
+                 border-radius: 16px;
+                 box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+                 text-align: center;
+                 opacity: 0;
+                 transform: translateY(20px);
+                 animation: fadeInUp 0.6s ease-out forwards;
+               }
+               @keyframes fadeInUp {
+                 to {
+                   opacity: 1;
+                   transform: translateY(0);
                  }
-               }, 500);
-             </script>
-           </body></html>
+               }
+               h1 {
+                 margin: 0 0 16px 0;
+                 color: #333;
+                 font-size: 28px;
+                 font-weight: 600;
+               }
+               p {
+                 margin: 0;
+                 color: #666;
+                 font-size: 16px;
+               }
+             </style>
+           </head>
+           <body>
+             <div class="card">
+               <h1>Installation Complete!</h1>
+               <p>You may close this window.</p>
+             </div>
+           </body>
+           </html>
          `);
        }
        
@@ -1546,20 +1582,56 @@ if (ff('OAUTH_CALLBACK_V2')) {
            : 'Agency Connected Successfully';
          
          return res.status(200).send(`
-           <html><head><title>Agency Connected</title></head>
-           <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
-             <h2>✅ Installed Successfully</h2>
-             <p>This window will auto close.</p>
-             <script>
-               setTimeout(() => {
-                 try {
-                   window.close();
-                 } catch (e) {
-                   document.body.innerHTML = '<h2>✅ Installation Complete</h2><p>You can now close this window.</p>';
+           <html>
+           <head>
+             <title>Agency Connected</title>
+             <style>
+               body {
+                 margin: 0;
+                 padding: 0;
+                 font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                 background: linear-gradient(135deg, #ff9a00 0%, #ffcd3c 100%);
+                 min-height: 100vh;
+                 display: flex;
+                 align-items: center;
+                 justify-content: center;
+               }
+               .card {
+                 background: white;
+                 padding: 40px 60px;
+                 border-radius: 16px;
+                 box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+                 text-align: center;
+                 opacity: 0;
+                 transform: translateY(20px);
+                 animation: fadeInUp 0.6s ease-out forwards;
+               }
+               @keyframes fadeInUp {
+                 to {
+                   opacity: 1;
+                   transform: translateY(0);
                  }
-               }, 500);
-             </script>
-           </body></html>
+               }
+               h1 {
+                 margin: 0 0 16px 0;
+                 color: #333;
+                 font-size: 28px;
+                 font-weight: 600;
+               }
+               p {
+                 margin: 0;
+                 color: #666;
+                 font-size: 16px;
+               }
+             </style>
+           </head>
+           <body>
+             <div class="card">
+               <h1>Installation Complete!</h1>
+               <p>You may close this window.</p>
+             </div>
+           </body>
+           </html>
          `);
        }
        
