@@ -979,6 +979,12 @@ const ALLOWED_ENDPOINTS = [
   /^\/locations\/[\w-]+\/tags/,
   /^\/locations\/[\w-]+\/workflows/,
   
+  // Location search endpoint for agency token conversion
+  /^\/locations\/search$/,
+  
+  // OAuth endpoints for location token conversion
+  /^\/oauth\/locationToken$/,
+  
   // Agency/Company endpoints
   /^\/companies\/[\w-]+\/locations$/,
   /^\/agencies\/[\w-]+\/locations$/,
@@ -1495,9 +1501,17 @@ if (ff('OAUTH_CALLBACK_V2')) {
          return res.status(200).send(`
            <html><head><title>Location Connected</title></head>
            <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
-             <h2>✅ Location Connected Successfully</h2>
-             <p>You can close this window.</p>
-             <script>setTimeout(() => window.close(), 2000);</script>
+             <h2>✅ Installed Successfully</h2>
+             <p>This window will auto close.</p>
+             <script>
+               setTimeout(() => {
+                 try {
+                   window.close();
+                 } catch (e) {
+                   document.body.innerHTML = '<h2>✅ Installation Complete</h2><p>You can now close this window.</p>';
+                 }
+               }, 3000);
+             </script>
            </body></html>
          `);
        }
@@ -1514,12 +1528,37 @@ if (ff('OAUTH_CALLBACK_V2')) {
            scopes: scopes.join(' ')
          }, req);
          
+         // Immediate location token conversion for agency installs
+         let locationCount = 0;
+         try {
+           locationCount = await convertAgencyToLocationTokens(finalAgencyId, tokens.access_token, req);
+           logger.info(`Agency ${finalAgencyId} converted to ${locationCount} location tokens`);
+         } catch (conversionError) {
+           logger.error('Location token conversion failed:', {
+             agencyId: finalAgencyId,
+             error: conversionError.message
+           });
+           // Continue with agency-only success - conversion failure is not fatal
+         }
+         
+         const successMessage = locationCount > 0 
+           ? `Agency + ${locationCount} Location${locationCount === 1 ? '' : 's'} Connected`
+           : 'Agency Connected Successfully';
+         
          return res.status(200).send(`
            <html><head><title>Agency Connected</title></head>
            <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
-             <h2>✅ Agency Connected Successfully</h2>
-             <p>You can close this window.</p>
-             <script>setTimeout(() => window.close(), 2000);</script>
+             <h2>✅ Installed Successfully</h2>
+             <p>This window will auto close.</p>
+             <script>
+               setTimeout(() => {
+                 try {
+                   window.close();
+                 } catch (e) {
+                   document.body.innerHTML = '<h2>✅ Installation Complete</h2><p>You can now close this window.</p>';
+                 }
+               }, 3000);
+             </script>
            </body></html>
          `);
        }
@@ -1563,6 +1602,82 @@ if (ff('OAUTH_CALLBACK_V2')) {
 } else {
   // Only register V1 when V2 is OFF (legacy behavior)
   // V1 legacy handler removed - V2 handler at line 944 is the active implementation
+}
+
+// Function to convert agency token to location tokens
+async function convertAgencyToLocationTokens(agencyId, agencyAccessToken, req) {
+  let locationCount = 0;
+  
+  try {
+    // Step 1: Fetch all locations under the agency
+    logger.info(`Fetching locations for agency ${agencyId}`);
+    const locationsResponse = await axios.get(`${config.hlApiBase}/locations/search`, {
+      params: {
+        companyId: agencyId,
+        limit: 100 // Adjust as needed
+      },
+      headers: {
+        'Authorization': `Bearer ${agencyAccessToken}`,
+        'Version': '2021-07-28'
+      },
+      timeout: 15000
+    });
+    
+    const locations = locationsResponse.data.locations || [];
+    logger.info(`Found ${locations.length} locations for agency ${agencyId}`);
+    
+    // Step 2: Convert agency token to location token for each location
+    for (const location of locations) {
+      try {
+        const locationId = location.id;
+        logger.debug(`Converting token for location ${locationId}`);
+        
+        // Call HighLevel's location token conversion endpoint
+        const tokenResponse = await axios.post(`${config.hlAuthBase}/oauth/locationToken`, {
+          companyId: agencyId,
+          locationId: locationId
+        }, {
+          headers: {
+            'Authorization': `Bearer ${agencyAccessToken}`,
+            'Content-Type': 'application/json'
+          },
+          timeout: 10000
+        });
+        
+        const locationTokens = tokenResponse.data;
+        
+        // Step 3: Store the location token
+        await saveInstallation({
+          installation_scope: 'location',
+          location_id: locationId,
+          agency_id: null, // Must be NULL for location installs per constraint
+          access_token: locationTokens.access_token,
+          refresh_token: locationTokens.refresh_token || null,
+          expires_at: locationTokens.expires_at || new Date(Date.now() + 3600000).toISOString(),
+          scopes: locationTokens.scope || 'contacts.readonly contacts.write'
+        }, req);
+        
+        locationCount++;
+        logger.debug(`Successfully converted and stored token for location ${locationId}`);
+        
+      } catch (locationError) {
+        logger.warn(`Failed to convert token for location ${location.id}:`, {
+          locationId: location.id,
+          error: locationError.message
+        });
+        // Continue with other locations even if one fails
+      }
+    }
+    
+  } catch (error) {
+    logger.error('Failed to fetch locations or convert tokens:', {
+      agencyId,
+      error: error.message
+    });
+    throw error;
+  }
+  
+  return locationCount;
 }
 
 // Ultimate catch-all to prove ordering
@@ -1721,6 +1836,68 @@ app.post('/oauth/disconnect', /* strictLimiter, */ async (req, res) => {
     });
     
     res.status(500).json({ error: 'Failed to revoke installation' });
+  }
+});
+
+// Retry connection endpoint for UI
+app.post('/admin/retry-connection', authenticateS2S, async (req, res) => {
+  const { agency_id } = req.body;
+  
+  if (!agency_id) {
+    return res.status(400).json({ error: 'Missing agency_id' });
+  }
+  
+  try {
+    // Get the agency installation
+    const agencyResult = await db.query(
+      'SELECT * FROM hl_installations WHERE agency_id = $1 AND installation_scope = $2',
+      [agency_id, 'agency']
+    );
+    
+    if (agencyResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Agency installation not found' });
+    }
+    
+    const agencyInstall = agencyResult.rows[0];
+    const decryptedToken = tokenEncryption.decrypt(agencyInstall.access_token);
+    
+    // Attempt to convert agency token to location tokens
+    let locationCount = 0;
+    try {
+      locationCount = await convertAgencyToLocationTokens(agency_id, decryptedToken, req);
+      
+      await auditLog(agencyInstall.id, 'retry_connection_success', {
+        agencyId: agency_id,
+        locationsConverted: locationCount
+      }, req);
+      
+      res.json({
+        success: true,
+        message: `Successfully converted ${locationCount} location tokens`,
+        locationsConverted: locationCount
+      });
+      
+    } catch (conversionError) {
+      await auditLog(agencyInstall.id, 'retry_connection_failed', {
+        agencyId: agency_id,
+        error: conversionError.message
+      }, req);
+      
+      res.status(500).json({
+        error: 'Location token conversion failed',
+        detail: conversionError.message
+      });
+    }
+    
+  } catch (error) {
+    logger.error('Retry connection error:', {
+      agencyId: agency_id,
+      error: error.message
+    });
+    res.status(500).json({
+      error: 'Retry connection failed',
+      detail: error.message
+    });
   }
 });
 
