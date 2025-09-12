@@ -714,7 +714,19 @@ class HighLevelAPI {
           'Content-Type': 'application/json',
           ...headers
         },
-        timeout: 30000
+        timeout: 30000,
+        validateStatus: () => true, // Don't throw on non-2xx status codes
+        responseType: 'text', // Get raw text to handle non-JSON responses
+        transformResponse: [(data) => {
+          // Try to parse as JSON, fallback to text
+          if (!data) return null;
+          try {
+            return JSON.parse(data);
+          } catch (e) {
+            // If not valid JSON, return as text wrapped in an object
+            return { message: data.toString() };
+          }
+        }]
       });
       
       return response;
