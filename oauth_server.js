@@ -1510,7 +1510,7 @@ if (ff('OAUTH_CALLBACK_V2')) {
                  } catch (e) {
                    document.body.innerHTML = '<h2>✅ Installation Complete</h2><p>You can now close this window.</p>';
                  }
-               }, 3000);
+               }, 500);
              </script>
            </body></html>
          `);
@@ -1557,7 +1557,7 @@ if (ff('OAUTH_CALLBACK_V2')) {
                  } catch (e) {
                    document.body.innerHTML = '<h2>✅ Installation Complete</h2><p>You can now close this window.</p>';
                  }
-               }, 3000);
+               }, 500);
              </script>
            </body></html>
          `);
