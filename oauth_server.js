@@ -992,12 +992,16 @@ const ALLOWED_ENDPOINTS = [
   /^\/agencies\/[\w-]+$/,
   
   // Contact endpoints
+  /^\/contacts$/,                          // Allow /contacts endpoint
+  /^\/contacts\?/,                        // Allow /contacts with query params
   /^\/contacts\/[\w-]+$/,
   /^\/contacts\/[\w-]+\/notes/,
   /^\/contacts\/[\w-]+\/tasks/,
   /^\/contacts\/[\w-]+\/appointments/,
   
   // Opportunity endpoints
+  /^\/opportunities$/,                     // Allow /opportunities endpoint
+  /^\/opportunities\?/,                   // Allow /opportunities with query params
   /^\/opportunities\/[\w-]+$/,
   /^\/opportunities\/[\w-]+\/notes/,
   
@@ -1489,7 +1493,7 @@ if (ff('OAUTH_CALLBACK_V2')) {
          
          // Store location installation (agency_id must be NULL per constraint)
          await saveInstallation({
-           installation_scope: 'location',
+          installation_type: 'location',
            location_id: finalLocationId,
            agency_id: null, // Must be NULL for location installs per require_tenant_id constraint
            access_token: tokens.access_token,
@@ -1555,7 +1559,7 @@ if (ff('OAUTH_CALLBACK_V2')) {
        if (finalAgencyId) {
          // Store agency installation (location_id must be NULL per constraint)
          await saveInstallation({
-           installation_scope: 'agency',
+        installation_type: 'agency',
            location_id: null, // Must be NULL for agency installs per require_tenant_id constraint
            agency_id: finalAgencyId,
            access_token: tokens.access_token,
@@ -1660,7 +1664,7 @@ if (ff('OAUTH_CALLBACK_V2')) {
 
   // Helper function to save installation
   async function saveInstallation(installData, req) {
-    const { installation_scope, location_id, agency_id, access_token, refresh_token, expires_at, scopes } = installData;
+    const { installation_type, location_id, agency_id, access_token, refresh_token, expires_at, scopes } = installData;
     
     // Use existing InstallationDB.saveInstallation method
     return await InstallationDB.saveInstallation(
@@ -1705,13 +1709,15 @@ async function convertAgencyToLocationTokens(agencyId, agencyAccessToken, req) {
         logger.debug(`Converting token for location ${locationId}`);
         
         // Call HighLevel's location token conversion endpoint
-        const tokenResponse = await axios.post(`${config.hlAuthBase}/oauth/locationToken`, {
-          companyId: agencyId,
-          locationId: locationId
-        }, {
+        const formData = new URLSearchParams();
+        formData.append('companyId', agencyId);
+        formData.append('locationId', locationId);
+        
+        const tokenResponse = await axios.post(`${config.hlApiBase}/oauth/locationToken`, formData, {
           headers: {
             'Authorization': `Bearer ${agencyAccessToken}`,
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Version': '2021-07-28'
           },
           timeout: 10000
         });
@@ -1719,15 +1725,15 @@ async function convertAgencyToLocationTokens(agencyId, agencyAccessToken, req) {
         const locationTokens = tokenResponse.data;
         
         // Step 3: Store the location token
-        await saveInstallation({
-          installation_scope: 'location',
-          location_id: locationId,
-          agency_id: null, // Must be NULL for location installs per constraint
+        const tokens = {
           access_token: locationTokens.access_token,
           refresh_token: locationTokens.refresh_token || null,
-          expires_at: locationTokens.expires_at || new Date(Date.now() + 3600000).toISOString(),
-          scopes: locationTokens.scope || 'contacts.readonly contacts.write'
-        }, req);
+          expires_in: 3600 // Default to 1 hour if not provided
+        };
+        
+        const scopes = (locationTokens.scope || 'contacts.readonly contacts.write').split(' ');
+        
+        await saveInstallation(locationId, null, tokens, scopes, req);
         
         locationCount++;
         logger.debug(`Successfully converted and stored token for location ${locationId}`);
@@ -1881,6 +1887,64 @@ app.get('/admin/installations', authenticateS2S, async (req, res) => {
   }
 });
 
+// Get locations for an agency (S2S authenticated)
+app.get('/locations/search', authenticateS2S, async (req, res) => {
+  const { agency_id } = req.query;
+  
+  if (!agency_id) {
+    return res.status(400).json({ error: 'Missing agency_id parameter' });
+  }
+  
+  try {
+    // Get the agency installation and token
+    const agencyResult = await db.query(
+      'SELECT access_token FROM hl_installations WHERE agency_id = $1 AND installation_type = $2 AND status = $3',
+      [agency_id, 'agency', 'active']
+    );
+    
+    if (agencyResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Active agency installation not found' });
+    }
+    
+    const agencyInstall = agencyResult.rows[0];
+    const decryptedToken = tokenEncryption.decrypt(agencyInstall.access_token);
+    
+    // Fetch locations from HighLevel API
+    const locationsResponse = await axios.get(`${config.hlApiBase}/locations/search`, {
+      params: {
+        companyId: agency_id,
+        limit: req.query.limit || 100
+      },
+      headers: {
+        'Authorization': `Bearer ${decryptedToken}`,
+        'Version': '2021-07-28'
+      },
+      timeout: 15000
+    });
+    
+    const locations = locationsResponse.data.locations || [];
+    
+    logger.info(`Fetched ${locations.length} locations for agency ${agency_id}`);
+    
+    res.json({
+      success: true,
+      locations: locations,
+      count: locations.length
+    });
+    
+  } catch (error) {
+    logger.error('Failed to fetch locations:', {
+      agencyId: agency_id,
+      error: error.message
+    });
+    
+    const status = error.response?.status || 500;
+    const errorData = error.response?.data || { error: 'Failed to fetch locations' };
+    
+    res.status(status).json(errorData);
+  }
+});
+
 // Disconnect/revoke installation
 app.post('/oauth/disconnect', /* strictLimiter, */ async (req, res) => {
   const { location_id, agency_id } = req.body;
@@ -1922,7 +1986,7 @@ app.post('/admin/retry-connection', authenticateS2S, async (req, res) => {
   try {
     // Get the agency installation
     const agencyResult = await db.query(
-      'SELECT * FROM hl_installations WHERE agency_id = $1 AND installation_scope = $2',
+      'SELECT * FROM hl_installations WHERE agency_id = $1 AND installation_type = $2',
       [agency_id, 'agency']
     );
     
@@ -1973,7 +2037,62 @@ app.post('/admin/retry-connection', authenticateS2S, async (req, res) => {
   }
 });
 
-
+// Database fix endpoint - temporary endpoint to fix installation types
+app.post('/admin/fix-installation-type', authenticateS2S, async (req, res) => {
+  const { installation_id, new_type } = req.body;
+  
+  if (!installation_id || !new_type) {
+    return res.status(400).json({ error: 'Missing installation_id or new_type' });
+  }
+  
+  if (!['agency', 'location'].includes(new_type)) {
+    return res.status(400).json({ error: 'Invalid installation type. Must be "agency" or "location"' });
+  }
+  
+  try {
+    const result = await db.query(
+      'UPDATE hl_installations SET installation_type = $1, updated_at = NOW() WHERE id = $2 RETURNING *',
+      [new_type, installation_id]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Installation not found' });
+    }
+    
+    const updatedInstallation = result.rows[0];
+    
+    logger.info('Installation type updated', {
+      installationId: installation_id,
+      oldType: 'location', // we know it was location from our investigation
+      newType: new_type,
+      agencyId: updatedInstallation.agency_id,
+      locationId: updatedInstallation.location_id,
+      ip: req.ip
+    });
+    
+    res.json({
+      success: true,
+      message: `Installation type updated to ${new_type}`,
+      installation: {
+        id: updatedInstallation.id,
+        agency_id: updatedInstallation.agency_id,
+        location_id: updatedInstallation.location_id,
+        installation_type: updatedInstallation.installation_type,
+        status: updatedInstallation.status,
+        updated_at: updatedInstallation.updated_at
+      }
+    });
+    
+  } catch (error) {
+    logger.error('Failed to update installation type:', {
+      error: error.message,
+      installationId: installation_id,
+      newType: new_type
+    });
+    
+    res.status(500).json({ error: 'Failed to update installation type' });
+  }
+});
 
 // Error handling middleware
 app.use((error, req, res, next) => {
